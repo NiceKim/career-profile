@@ -86,20 +86,20 @@ test/
 **Interfaces:**
 - Produces: a runnable Next.js app and a working `npm test` command that later tasks build on.
 
-- [ ] **Step 1: Scaffold Next.js**
+- [x] **Step 1: Scaffold Next.js**
 
 ```bash
 npx create-next-app@latest . --typescript --app --eslint --no-tailwind --src-dir --import-alias "@/*" --use-npm
 ```
 
-- [ ] **Step 2: Install test/data/auth dependencies**
+- [x] **Step 2: Install test/data/auth dependencies**
 
 ```bash
 npm install prisma @prisma/client zod bcryptjs next-auth@beta ai @ai-sdk/openai
 npm install -D vitest @vitejs/plugin-react
 ```
 
-- [ ] **Step 3: Add Vitest config**
+- [x] **Step 3: Add Vitest config**
 
 ```ts
 // vitest.config.ts
@@ -117,7 +117,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Add test script to package.json**
+- [x] **Step 4: Add test script to package.json**
 
 ```json
 {
@@ -127,7 +127,7 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 5: Write a trivial smoke test**
+- [x] **Step 5: Write a trivial smoke test**
 
 ```ts
 // test/scaffold.test.ts
@@ -140,12 +140,12 @@ describe('scaffold', () => {
 });
 ```
 
-- [ ] **Step 6: Run test to verify it passes**
+- [x] **Step 6: Run test to verify it passes**
 
 Run: `npm test`
 Expected: PASS (1 test)
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add -A
@@ -166,7 +166,7 @@ git commit -m "chore: scaffold Next.js app with Vitest"
 **Interfaces:**
 - Produces: `prisma` client singleton (`src/lib/prisma.ts` default export), `resetDb()` (`test/db.ts`), and the full data model every later task queries against.
 
-- [ ] **Step 1: Write the schema**
+- [x] **Step 1: Write the schema**
 
 ```prisma
 // prisma/schema.prisma
@@ -270,7 +270,7 @@ model ResumeVersionItem {
 }
 ```
 
-- [ ] **Step 2: Add DATABASE_URL to .env.example, create local + test databases**
+- [x] **Step 2: Add DATABASE_URL to .env.example, create local + test databases**
 
 ```bash
 echo 'DATABASE_URL="postgresql://localhost:5432/resume_vc_dev"' >> .env.example
@@ -280,12 +280,12 @@ cp .env.example .env
 echo 'DATABASE_URL="postgresql://localhost:5432/resume_vc_dev"' > .env
 ```
 
-- [ ] **Step 3: Run the migration against the dev DB**
+- [x] **Step 3: Run the migration against the dev DB**
 
 Run: `npx prisma migrate dev --name init`
 Expected: migration succeeds, Prisma Client generated.
 
-- [ ] **Step 4: Write the Prisma client singleton**
+- [x] **Step 4: Write the Prisma client singleton**
 
 ```ts
 // src/lib/prisma.ts
@@ -300,7 +300,7 @@ if (process.env.NODE_ENV !== 'production') {
 }
 ```
 
-- [ ] **Step 5: Write the test DB reset helper**
+- [x] **Step 5: Write the test DB reset helper**
 
 ```ts
 // test/db.ts
@@ -316,7 +316,7 @@ export async function resetDb() {
 }
 ```
 
-- [ ] **Step 6: Write a test proving the schema round-trips against the test DB**
+- [x] **Step 6: Write a test proving the schema round-trips against the test DB**
 
 Point `DATABASE_URL` at `resume_vc_test` for the test run (e.g. `DATABASE_URL=postgresql://localhost:5432/resume_vc_test npx prisma migrate deploy` once, then run tests with that env var).
 
@@ -339,12 +339,12 @@ describe('schema', () => {
 });
 ```
 
-- [ ] **Step 7: Run test to verify it passes**
+- [x] **Step 7: Run test to verify it passes**
 
 Run: `DATABASE_URL=postgresql://localhost:5432/resume_vc_test npm test -- test/db.test.ts`
 Expected: PASS
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
