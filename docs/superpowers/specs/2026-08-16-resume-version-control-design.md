@@ -35,7 +35,7 @@ flowchart LR
 
 - **Frontend/backend:** Next.js + TypeScript. Server Actions handle versioning writes (create/edit/fork). Route Handlers serve the AI endpoints (needed for streaming the Q&A chat).
 - **Database:** Postgres via Prisma.
-- **Auth:** Auth.js (credentials + optional Google OAuth), scoping all data to `ownerUserId`.
+- **Auth:** Auth.js (Credentials provider, JWT sessions), scoping all data to `ownerUserId`.
 - **AI:** OpenAI API via the Vercel AI SDK (`streamText` for Q&A, `generateObject` for JD optimization's structured output).
 
 ## Data Model
@@ -51,7 +51,7 @@ erDiagram
     USER ||--o{ OBJECT_VERSION : owns
     USER ||--o{ RESUME_VERSION : owns
     RESUME_VERSION ||--o{ RESUME_VERSION_SECTION : has
-    RESUME_VERSION_SECTION ||--o{ RESUME_VERSION_ITEM : has
+    RESUME_VERSION ||--o{ RESUME_VERSION_ITEM : has
     RESUME_VERSION_ITEM }o--|| OBJECT_VERSION : references
     RESUME_VERSION ||--o{ RESUME_VERSION : parentVersionId
 
@@ -77,6 +77,7 @@ erDiagram
         int versionNumber
         jsonb fields "type-specific, validated by a Zod schema per type"
         text body "markdown"
+        string[] tags "freeform, e.g. Backend/Frontend/AI"
         timestamp createdAt
     }
     RESUME_VERSION {
@@ -90,12 +91,12 @@ erDiagram
     RESUME_VERSION_SECTION {
         uuid id
         uuid resumeVersionId
-        enum sectionType
+        enum sectionType "UNIQUE with resumeVersionId - one section per type per resume"
         int order
     }
     RESUME_VERSION_ITEM {
         uuid id
-        uuid sectionId
+        uuid resumeVersionId
         uuid objectVersionId
         int order
     }
@@ -106,12 +107,14 @@ erDiagram
 - **Editing an object** creates a new `object_version` row (`rootVersionId` unchanged, `versionNumber` incremented) only on explicit save — not per keystroke. Existing resumes that reference the old version are unaffected; only resumes edited afterward pick up the new one.
 - **Editing a resume** creates a new `resume_version` row with `rootVersionId` unchanged (same tree) and `parentVersionId` = the version edited from. Edits are only ever made from a tree's current head (its most recent version) — editing from an older version isn't supported, since forking is the mechanism for intentionally diverging history. This keeps each tree's version chain linear and "latest version per resume," used by the JD-optimization feature, unambiguous.
 - **Forking a resume** creates a new `resume_version` row that starts a **new tree**: `rootVersionId` = itself, `parentVersionId` = the source version (cross-tree pointer, for lineage display only — no merging back).
+- **`resume_version_item` references `resumeVersionId` directly, not `sectionId`.** `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`) — an item's section is its object's `type`, matched at render time rather than stored as a FK. `resume_version_section` still holds per-section `order` (and can exist with zero items).
 - **`fields` is JSONB, not per-type relational columns**, to avoid a sparse table with a column for every possible field across all 7 object types. "Fixed schema" is enforced at the application layer via a Zod validator per `type`, not via the DB column shape. Every query pattern in this app fetches by ID or by `ownerUserId` — nothing filters on values *inside* `fields` — so JSONB costs nothing here; a GIN/expression index can be added later if that changes.
 - **Profile** (name/email/phone/location/links, shown in a resume's header) is a single live, unversioned row per user — resumes always render the current profile, not a snapshot.
+- **Tags** are freeform strings on `object_versions`, scoped **per version, not per object** — since different versions of the same object already represent differently-targeted variations (e.g. one phrasing of a job tagged `Backend`, a rewritten phrasing of the same job tagged `Frontend`), tags follow that same per-version granularity. Used to filter the object list page. No fixed tag taxonomy — existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`), not enforced.
 
 ## Core Flows
 
-**Edit** (editing an object referenced by a resume):
+**Writing a resume version** — Create, Edit, and Fork are the same underlying write: one `resume_versions` insert + a `resume_version_sections`/`resume_version_items` insert, made only when the user submits — not when they click Create/Edit/Fork. Editing an object's content along the way is a fully separate write that never touches `resume_versions` — existing resumes keep pointing at whichever object version they already reference until the user's resume edit picks up the newer one:
 
 ```mermaid
 sequenceDiagram
@@ -119,30 +122,32 @@ sequenceDiagram
     participant App as Next.js Server Action
     participant DB as Postgres
 
-    U->>App: Edit object content, click Save
-    App->>DB: INSERT object_versions (rootVersionId=existing root, versionNumber+1)
-    App->>DB: INSERT resume_versions (rootVersionId=same tree, parentVersionId=current)
-    App->>DB: INSERT resume_version_sections + resume_version_items (copy structure, swap edited item's objectVersionId to new version)
+    opt Edit or Fork
+        U->>App: Click Edit / Fork
+        App->>DB: SELECT current/source version + content
+        App-->>U: Edit form, pre-filled
+    end
+
+    opt Update Objects
+        U->>App: Edit object content, click Save
+        App->>DB: INSERT object_versions (rootVersionId unchanged, versionNumber+1)
+        App-->>U: Now viewing new object version
+    end
+
+    U->>App: Click Save
+    App->>DB: INSERT resume_versions (rootVersionId, parentVersionId)
+    App->>DB: INSERT resume_version_sections + resume_version_items
     DB-->>App: new resume_version.id
-    App-->>U: Now viewing new resume version
+    App-->>U: Redirect to the new version's view page
 ```
 
-**Fork:**
+| Entry point | `rootVersionId` | `parentVersionId` | initial form content |
+|---|---|---|---|
+| **Create** | self (new tree) | `null` | empty |
+| **Edit** | head's `rootVersionId` (same tree) | head's `id` | pre-filled from the head version |
+| **Fork** | self (new tree) | source version's `id` | pre-filled from the source version |
 
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant App as Next.js Server Action
-    participant DB as Postgres
-
-    U->>App: Fork resume (from resume_version X)
-    App->>DB: INSERT resume_versions (rootVersionId=self/new, parentVersionId=X, name="copy of ...")
-    App->>DB: INSERT resume_version_sections + items (copy X's structure verbatim)
-    DB-->>App: new resume_version.id (new tree root)
-    App-->>U: Dashboard shows new resume, fork-linked to X's tree
-```
-
-**AI Career Q&A** (streaming, "career context" = all of the user's objects):
+**AI Career Q&A** (streaming, "career context" = the latest version of each of the user's objects):
 
 ```mermaid
 sequenceDiagram
@@ -152,7 +157,7 @@ sequenceDiagram
     participant AI as OpenAI (Vercel AI SDK)
 
     U->>App: Ask question
-    App->>DB: SELECT all object_versions WHERE ownerUserId (+ Profile)
+    App->>DB: SELECT latest object_version per rootVersionId WHERE ownerUserId (+ Profile)
     App->>AI: streamText(context + question)
     AI-->>App: token stream
     App-->>U: streamed response
@@ -178,7 +183,7 @@ sequenceDiagram
 **Dashboards** (plain reads, no AI, no sequence diagram needed):
 
 - **Resume Dashboard:** groups `resume_versions` by `rootVersionId` to list distinct resumes; draws fork arrows by following `parentVersionId` links that cross into a different `rootVersionId`.
-- **Object Dashboard:** groups `object_versions` by `rootVersionId`; for each version, joins `resume_version_item → resume_version_section → resume_version` to show which resume(s) currently use it.
+- **Object Dashboard:** groups `object_versions` by `rootVersionId`; for each version, joins `resume_version_item → resume_version` (via `resumeVersionId`) to show which resume(s) currently use it. (Tag filtering lives on the object list page, not here.)
 
 ## AI Feature Details
 
