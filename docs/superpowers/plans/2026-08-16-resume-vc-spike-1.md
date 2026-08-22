@@ -624,9 +624,9 @@ git commit -m "feat: add object versioning core logic"
 
 **Interfaces:**
 - Consumes: `prisma`
-- Produces: `listObjectsForUser(userId: string, tags?: string[]): Promise<ObjectVersion[]>` (latest version per `rootVersionId`; when `tags` is given, only versions matching at least one), `getObjectHistory(userId: string, rootVersionId: string): Promise<ObjectVersion[]>` (all versions, oldest first), `listTagsForUser(userId: string): Promise<string[]>` (distinct tags across all versions, for autocomplete)
+- Produces: `listObjectsForUser(userId: string, type?: ObjectType): Promise<ObjectVersion[]>` (every version of every object, newest first; when `type` is given, only that type — tag filtering is applied client-side since the full set is already fetched), `getObjectHistory(userId: string, rootVersionId: string): Promise<ObjectVersion[]>` (all versions, oldest first), `listTagsForUser(userId: string): Promise<string[]>` (distinct tags across all versions, for autocomplete)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/objects/queries.test.ts
@@ -639,28 +639,27 @@ import { listObjectsForUser, getObjectHistory, listTagsForUser } from './queries
 describe('object queries', () => {
   beforeEach(resetDb);
 
-  it('lists only the latest version of each object', async () => {
+  it('lists every version of every object, newest first', async () => {
     const user = await prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
     const v1 = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
-    await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
+    const v2 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
     const other = await createObjectVersion(user.id, 'SUMMARY', {}, 'Backend engineer');
 
     const list = await listObjectsForUser(user.id);
 
-    expect(list).toHaveLength(2);
-    const skillsEntry = list.find((o) => o.rootVersionId === v1.rootVersionId);
-    expect(skillsEntry?.versionNumber).toBe(2);
+    expect(list).toHaveLength(3);
+    expect(list.map((o) => o.id)).toEqual([other.id, v2.id, v1.id]);
   });
 
-  it('filters to only versions matching at least one given tag', async () => {
+  it('filters to only the given object type', async () => {
     const user = await prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
-    await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Go', ['Backend']);
-    await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'React', ['Frontend']);
+    await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Go');
+    await createObjectVersion(user.id, 'SUMMARY', {}, 'Backend engineer');
 
-    const backendOnly = await listObjectsForUser(user.id, ['Backend']);
+    const skillsOnly = await listObjectsForUser(user.id, 'SKILLS');
 
-    expect(backendOnly).toHaveLength(1);
-    expect(backendOnly[0].body).toBe('Go');
+    expect(skillsOnly).toHaveLength(1);
+    expect(skillsOnly[0].body).toBe('Go');
   });
 
   it('returns full history oldest first', async () => {
@@ -685,37 +684,26 @@ describe('object queries', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/objects/queries.test.ts`
 Expected: FAIL with "Cannot find module './queries'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/objects/queries.ts
 import { prisma } from '@/lib/prisma';
+import type { ObjectType } from './schemas';
 
-export async function listObjectsForUser(userId: string, tags?: string[]) {
-  const all = await prisma.objectVersion.findMany({
-    where: { ownerUserId: userId },
-    orderBy: { versionNumber: 'desc' },
+export async function listObjectsForUser(userId: string, type?: ObjectType) {
+  return prisma.objectVersion.findMany({
+    where: {
+      ownerUserId: userId,
+      ...(type ? { type } : {}),
+    },
+    orderBy: { createdAt: 'desc' },
   });
-  const seenRoots = new Set<string>();
-  const latest = [];
-  for (const version of all) {
-    if (!seenRoots.has(version.rootVersionId)) {
-      seenRoots.add(version.rootVersionId);
-      latest.push(version);
-    }
-  }
-  // Filter AFTER picking the latest version per object, not before — tag
-  // filtering should narrow which current objects you see, not resurrect
-  // an older, superseded version just because it happened to match.
-  if (tags && tags.length > 0) {
-    return latest.filter((v) => v.tags.some((t) => tags.includes(t)));
-  }
-  return latest;
 }
 
 export async function getObjectHistory(userId: string, rootVersionId: string) {
@@ -738,12 +726,12 @@ export async function listTagsForUser(userId: string): Promise<string[]> {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/objects/queries.test.ts`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
