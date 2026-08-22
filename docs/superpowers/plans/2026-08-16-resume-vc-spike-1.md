@@ -486,7 +486,7 @@ git commit -m "feat: add per-type Zod schemas for object fields"
 - Consumes: `prisma` (`src/lib/prisma.ts`), `validateObjectFields` (`src/lib/objects/schemas.ts`)
 - Produces: `createObjectVersion(userId: string, type: ObjectType, fields: unknown, body: string, tags?: string[]): Promise<ObjectVersion>`, `editObjectVersion(userId: string, existingVersionId: string, fields: unknown, body: string, tags?: string[]): Promise<ObjectVersion>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/objects/versioning.test.ts
@@ -538,12 +538,12 @@ describe('object versioning', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/objects/versioning.test.ts`
 Expected: FAIL with "Cannot find module './versioning'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/objects/versioning.ts
@@ -602,12 +602,12 @@ export async function editObjectVersion(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/objects/versioning.test.ts`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
