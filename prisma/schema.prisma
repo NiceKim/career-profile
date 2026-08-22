@@ -1,0 +1,98 @@
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ObjectType {
+  WORK_EXPERIENCE
+  EDUCATION
+  SKILLS
+  SUMMARY
+  PROJECT
+  CERTIFICATION
+  EXTRACURRICULAR
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  profile        Profile?
+  objectVersions ObjectVersion[]
+  resumeVersions ResumeVersion[]
+}
+
+model Profile {
+  id       String @id @default(uuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id])
+  fullName String
+  email    String
+  phone    String
+  location String
+  links    Json
+}
+
+model ObjectVersion {
+  id            String     @id @default(uuid())
+  rootVersionId String
+  ownerUserId   String
+  owner         User       @relation(fields: [ownerUserId], references: [id])
+  type          ObjectType
+  versionNumber Int
+  fields        Json
+  body          String
+  tags          String[]   @default([])
+  createdAt     DateTime   @default(now())
+
+  resumeVersionItems ResumeVersionItem[]
+
+  @@index([ownerUserId])
+  @@index([rootVersionId])
+}
+
+model ResumeVersion {
+  id              String   @id @default(uuid())
+  rootVersionId   String
+  parentVersionId String?
+  ownerUserId     String
+  owner           User     @relation(fields: [ownerUserId], references: [id])
+  name            String
+  createdAt       DateTime @default(now())
+
+  sections ResumeVersionSection[]
+  items    ResumeVersionItem[]
+
+  @@index([ownerUserId])
+  @@index([rootVersionId])
+  @@index([parentVersionId])
+}
+
+model ResumeVersionSection {
+  id              String        @id @default(uuid())
+  resumeVersionId String
+  resumeVersion   ResumeVersion @relation(fields: [resumeVersionId], references: [id])
+  sectionType     ObjectType
+  order           Int
+
+  @@unique([resumeVersionId, sectionType])
+  @@index([resumeVersionId])
+}
+
+model ResumeVersionItem {
+  id              String        @id @default(uuid())
+  resumeVersionId String
+  resumeVersion   ResumeVersion @relation(fields: [resumeVersionId], references: [id])
+  objectVersionId String
+  objectVersion   ObjectVersion @relation(fields: [objectVersionId], references: [id])
+  order           Int
+
+  @@index([resumeVersionId])
+  @@index([objectVersionId])
+}
