@@ -362,7 +362,7 @@ git commit -m "feat: add Prisma schema, client, and test DB helper"
 **Interfaces:**
 - Produces: `objectFieldSchemas: Record<ObjectType, z.ZodType>`, `validateObjectFields(type: ObjectType, fields: unknown): Record<string, unknown>` (throws `z.ZodError` on invalid input).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/objects/schemas.test.ts
@@ -394,12 +394,12 @@ describe('validateObjectFields', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/objects/schemas.test.ts`
 Expected: FAIL with "Cannot find module './schemas'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/objects/schemas.ts
@@ -462,12 +462,12 @@ export function validateObjectFields(type: ObjectType, fields: unknown) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/objects/schemas.test.ts`
 Expected: PASS (3 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
