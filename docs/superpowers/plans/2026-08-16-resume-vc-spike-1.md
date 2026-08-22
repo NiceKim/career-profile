@@ -1895,7 +1895,7 @@ git commit -m "feat: add signup and login pages"
 
 **Interfaces:**
 - Consumes: `getCurrentUserId`, `listObjectsForUser`/`getObjectHistory`/`listTagsForUser` (`src/lib/objects/queries.ts`), `createObjectAction`/`editObjectAction` (`src/app/objects/actions.ts`)
-- Produces: working `/objects` list+create page (with `?tags=` filtering) and `/objects/[rootVersionId]/edit` edit page.
+- Produces: working `/objects` list+create page (`?type=` filters server-side via `listObjectsForUser`; `?tags=` filters the already-fetched list client-side) and `/objects/[rootVersionId]/edit` edit page.
 
 - [ ] **Step 1: Write the list + create page**
 
@@ -1916,20 +1916,39 @@ function parseTags(raw: string) {
 export default async function ObjectsPage({
   searchParams,
 }: {
-  searchParams: { tags?: string };
+  searchParams: { type?: string; tags?: string };
 }) {
   const userId = await getCurrentUserId();
-  const activeTags = searchParams.tags ? parseTags(searchParams.tags) : undefined;
   const [objects, allTags] = await Promise.all([
-    listObjectsForUser(userId, activeTags),
+    listObjectsForUser(userId, searchParams.type as any),
     listTagsForUser(userId),
   ]);
+  // Tag filtering is client-side: the full (type-filtered) set is already
+  // fetched, so narrowing further by tag needs no extra query.
+  const activeTags = searchParams.tags ? parseTags(searchParams.tags) : [];
+  const filtered =
+    activeTags.length > 0
+      ? objects.filter((o) => o.tags.some((t) => activeTags.includes(t)))
+      : objects;
 
   return (
     <div>
       <h1>Objects</h1>
 
       <form>
+        <label>
+          Type:
+          <select name="type" defaultValue={searchParams.type ?? ''}>
+            <option value="">All</option>
+            <option value="WORK_EXPERIENCE">Work Experience</option>
+            <option value="EDUCATION">Education</option>
+            <option value="SKILLS">Skills</option>
+            <option value="SUMMARY">Summary</option>
+            <option value="PROJECT">Project</option>
+            <option value="CERTIFICATION">Certification</option>
+            <option value="EXTRACURRICULAR">Extracurricular</option>
+          </select>
+        </label>
         <label>
           Filter by tags (comma-separated):
           <input name="tags" defaultValue={searchParams.tags ?? ''} list="known-tags" />
@@ -1944,8 +1963,8 @@ export default async function ObjectsPage({
       </form>
 
       <ul>
-        {objects.map((o) => (
-          <li key={o.rootVersionId}>
+        {filtered.map((o) => (
+          <li key={o.id}>
             <Link href={`/objects/${o.rootVersionId}/edit`}>
               [{o.type}] {o.body.slice(0, 60)} (v{o.versionNumber})
             </Link>

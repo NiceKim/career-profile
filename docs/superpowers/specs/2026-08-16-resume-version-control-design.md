@@ -110,7 +110,7 @@ erDiagram
 - **`resume_version_item` references `resumeVersionId` directly, not `sectionId`.** `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`) — an item's section is its object's `type`, matched at render time rather than stored as a FK. `resume_version_section` still holds per-section `order` (and can exist with zero items).
 - **`fields` is JSONB, not per-type relational columns**, to avoid a sparse table with a column for every possible field across all 7 object types. "Fixed schema" is enforced at the application layer via a Zod validator per `type`, not via the DB column shape. Every query pattern in this app fetches by ID or by `ownerUserId` — nothing filters on values *inside* `fields` — so JSONB costs nothing here; a GIN/expression index can be added later if that changes.
 - **Profile** (name/email/phone/location/links, shown in a resume's header) is a single live, unversioned row per user — resumes always render the current profile, not a snapshot.
-- **Tags** are freeform strings on `object_versions`, scoped **per version, not per object** — since different versions of the same object already represent differently-targeted variations (e.g. one phrasing of a job tagged `Backend`, a rewritten phrasing of the same job tagged `Frontend`), tags follow that same per-version granularity. Used to filter the object list page. No fixed tag taxonomy — existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`), not enforced.
+- **Tags** are freeform strings on `object_versions`, scoped **per version, not per object** — since different versions of the same object already represent differently-targeted variations (e.g. one phrasing of a job tagged `Backend`, a rewritten phrasing of the same job tagged `Frontend`), tags follow that same per-version granularity. The object list page fetches every version for a user (`type` is the only server-side filter) and applies tag filtering client-side, since the full set is already in hand. No fixed tag taxonomy — existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`), not enforced.
 
 ## Core Flows
 
@@ -147,7 +147,7 @@ sequenceDiagram
 | **Edit** | head's `rootVersionId` (same tree) | head's `id` | pre-filled from the head version |
 | **Fork** | self (new tree) | source version's `id` | pre-filled from the source version |
 
-**AI Career Q&A** (streaming, "career context" = the latest version of each of the user's objects):
+**AI Career Q&A** (streaming, "career context" = every version of every one of the user's objects):
 
 ```mermaid
 sequenceDiagram
@@ -183,7 +183,7 @@ sequenceDiagram
 **Dashboards** (plain reads, no AI, no sequence diagram needed):
 
 - **Resume Dashboard:** groups `resume_versions` by `rootVersionId` to list distinct resumes; draws fork arrows by following `parentVersionId` links that cross into a different `rootVersionId`.
-- **Object Dashboard:** groups `object_versions` by `rootVersionId`; for each version, joins `resume_version_item → resume_version` (via `resumeVersionId`) to show which resume(s) currently use it. (Tag filtering lives on the object list page, not here.)
+- **Object Dashboard:** groups `object_versions` by `rootVersionId`; for each version, joins `resume_version_item → resume_version` (via `resumeVersionId`) to show which resume(s) currently use it. (Tag filtering is client-side on the object list page, not a query concern here.)
 
 ## AI Feature Details
 
