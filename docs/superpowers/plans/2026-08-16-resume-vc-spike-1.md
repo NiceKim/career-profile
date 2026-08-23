@@ -1695,7 +1695,7 @@ git commit -m "feat: add object server actions"
 - Consumes: `getCurrentUserId`, `createResumeFromScratch`/`editResume`/`forkResume` (`src/lib/resumes/versioning.ts`)
 - Produces (each writes exactly once — `sections` is whatever the caller's form currently holds): `createResumeAction(name: string, sections?: SectionInput[]): Promise<{ id: string }>`, `editResumeAction(existingVersionId: string, name: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`, `forkResumeAction(sourceVersionId: string, newName: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/app/resumes/actions.test.ts
@@ -1765,12 +1765,12 @@ describe('resume actions', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/app/resumes/actions.test.ts`
 Expected: FAIL with "Cannot find module './actions'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/app/resumes/actions.ts
@@ -1813,12 +1813,12 @@ export async function forkResumeAction(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/app/resumes/actions.test.ts`
 Expected: PASS (5 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
