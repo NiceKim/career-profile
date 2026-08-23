@@ -1586,7 +1586,7 @@ git commit -m "feat: add profile query and upsert"
 - Consumes: `getCurrentUserId` (`src/lib/session.ts`), `createObjectVersion`/`editObjectVersion` (`src/lib/objects/versioning.ts`)
 - Produces: `createObjectAction(type: ObjectType, fields: unknown, body: string, tags?: string[]): Promise<{ id: string }>`, `editObjectAction(existingVersionId: string, fields: unknown, body: string, tags?: string[]): Promise<{ id: string }>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/app/objects/actions.test.ts
@@ -1643,12 +1643,12 @@ describe('object actions', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/app/objects/actions.test.ts`
 Expected: FAIL with "Cannot find module './actions'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/app/objects/actions.ts
@@ -1671,12 +1671,12 @@ export async function editObjectAction(existingVersionId: string, fields: unknow
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/app/objects/actions.test.ts`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
