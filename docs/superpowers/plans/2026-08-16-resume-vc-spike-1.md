@@ -1988,7 +1988,7 @@ Unchanged from the original plan — no design exists for these in Figma, built 
 - Consumes: `hashPassword` (`src/lib/password.ts`), `prisma`, `signIn` (`src/lib/auth.ts`)
 - Produces: working `/signup` and `/login` pages.
 
-- [ ] **Step 1: Write the signup action**
+- [x] **Step 1: Write the signup action**
 
 ```ts
 // src/app/signup/actions.ts
@@ -2009,7 +2009,7 @@ export async function signupAction(formData: FormData) {
 }
 ```
 
-- [ ] **Step 2: Write the signup page**
+- [x] **Step 2: Write the signup page**
 
 ```tsx
 // src/app/signup/page.tsx
@@ -2026,7 +2026,7 @@ export default function SignupPage() {
 }
 ```
 
-- [ ] **Step 3: Write the login page**
+- [x] **Step 3: Write the login page**
 
 ```tsx
 // src/app/login/page.tsx
@@ -2053,12 +2053,12 @@ export default function LoginPage() {
 }
 ```
 
-- [ ] **Step 4: Manually verify**
+- [x] **Step 4: Manually verify**
 
 Run: `npm run dev`, visit `http://localhost:3000/signup`, create an account, then log in at `/login`.
-Expected: signup redirects to `/login`; login redirects to `/dashboard/resumes` and now shows the sidebar (Task 16).
+Expected: signup redirects to `/login`; login redirects to `/dashboard/resumes` (404 until Task 18 — expected). Verified live in the browser: signup created a real `User` row, login set a real session (confirmed via `/profile`, which also fully round-tripped: save → DB write → reload shows persisted values → log out clears the session → `/profile` correctly throws `Not authenticated` afterward).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
@@ -2251,11 +2251,11 @@ export function LogoutButton() {
 
 `signOut` needs a client component since it's from `next-auth/react`, hence the small split-out button.
 
-- [ ] **Step 3: Manually verify**
+- [x] **Step 3: Manually verify**
 
-Run: `npm run dev`, click the sidebar avatar, confirm it opens `/profile`, fill in and save the form, confirm the values persist on reload, and confirm "Log out" returns to `/login`.
+Verified live in the browser ahead of Task 16 (no sidebar avatar to click yet, so visited `/profile` directly): filled and saved the form, confirmed the `Profile` row was written correctly in Postgres, confirmed the form re-shows the persisted values on reload, "Log out" returned to `/login`, and `/profile` correctly throws `Not authenticated` afterward. The sidebar entry point itself will be confirmed once Task 16 exists.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
