@@ -2273,7 +2273,7 @@ No separate object list page — the old standalone `/objects` page is dropped. 
 **Files:**
 - Create: `src/components/ObjectPickerModal.tsx`
 - Create: `src/app/(app)/dashboard/objects/page.tsx`
-- Create: `src/lib/objects/fieldConfig.ts` (added after initial implementation — see deviation 3 below)
+- Create: `src/lib/objects/fieldConfig.ts` (added mid-implementation, see Step 2)
 
 **Interfaces:**
 - Consumes: `getCurrentUserId`, `getObjectDashboard` (`src/lib/objects/dashboard.ts`), `listTagsForUser` (`src/lib/objects/queries.ts`), `createObjectAction`/`editObjectAction`/`listLatestObjectsAction`/`getObjectHistoryAction` (`src/app/objects/actions.ts`)
@@ -2416,118 +2416,21 @@ export function ObjectPickerModal({
 
 - [x] **Step 2: Write the Object Dashboard page**
 
-```tsx
-// src/app/(app)/dashboard/objects/page.tsx
-import { getCurrentUserId } from '@/lib/session';
-import { getObjectDashboard } from '@/lib/objects/dashboard';
-import { listTagsForUser } from '@/lib/objects/queries';
-import { ObjectPickerModal } from '@/components/ObjectPickerModal';
-import { redirect } from 'next/navigation';
+Original sketch was a bare per-version list with a type/tag filter and one `ObjectPickerModal` "Edit" trigger per row. Went through several rounds of re-pulling the real Figma design (node `8:196`, the actual "4a" screen) and live user feedback; what actually shipped:
 
-const TYPES = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY', 'PROJECT', 'CERTIFICATION', 'EXTRACURRICULAR'] as const;
+- `page.tsx` (Server Component: fetch + tag-filter) + `ObjectDashboardClient.tsx` (Client Component: owns the modals, `onPick` → `router.refresh()`) — split because an async Server Component can't pass a plain closure to a Client Component prop.
+- One bordered box per object *family* (versions sharing a `rootVersionId`), one filmstrip per line at full page width — not Figma's literal 373px card, not a flat per-version list. Caption = root version's identity field (`company`/`institution`/etc. — `IDENTITY_FIELD` in `src/lib/objects/fieldConfig.ts`; "Summary" fallback for the type with none). Filmstrip shows the `CHIP_LIMIT` most recent versions, newest first; the dashed "→" opens the rest.
+- Chip rendering (identity, other fields, a `MMM-YYYY – MMM-YYYY` date range, body, tags, a per-chip "✎" edit icon) lives in one shared `src/components/ObjectVersionChip.tsx`, used by both the dashboard filmstrip and the picker modal's "all versions" view — same component everywhere, always a `<div>` (not a `<button>`) so the edit trigger can nest inside it.
+- The "✎" icon prefills from that exact version and calls `editObjectAction` — appends a new version to the *same* object, confirmed against the DB. (An earlier version of this made it create an independent object instead; the user caught it as a bug and it was reverted.)
+- Object create/edit forms in `ObjectPickerModal` are type-aware (`FIELDS_BY_TYPE`) and collect tags — the original sketch's `{ category, body }`-only form only actually satisfied 1 of 7 object types.
+- Dropped the type filter (redundant with the per-type sections already there; type-scoping belongs to the resume-builder picker instead) and the "all versions" inline edit form (that view is browse-only, per the original design intent).
+- Dates are month/year precision (`type="month"`, no day), displayed via a hardcoded month-abbreviation table rather than `toLocaleDateString` — the latter caused a real server/client hydration mismatch (Node's default locale vs. the browser's OS locale disagreeing on date format).
 
-export default async function ObjectDashboardPage({
-  searchParams,
-}: {
-  searchParams: { type?: string; tags?: string };
-}) {
-  const userId = await getCurrentUserId();
-  const [dashboard, allTags] = await Promise.all([getObjectDashboard(userId), listTagsForUser(userId)]);
-
-  const activeTags = searchParams.tags ? searchParams.tags.split(',').map((t) => t.trim()) : [];
-  const filtered = dashboard.filter((entry) => {
-    if (searchParams.type && entry.type !== searchParams.type) return false;
-    if (activeTags.length === 0) return true;
-    return entry.versions.some((v) => v.tags.some((t) => activeTags.includes(t)));
-  });
-
-  return (
-    <div>
-      <h1>Objects</h1>
-
-      <form>
-        <select name="type" defaultValue={searchParams.type ?? ''}>
-          <option value="">All types</option>
-          {TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <input name="tags" defaultValue={searchParams.tags ?? ''} placeholder="Tags, comma-separated" list="known-tags" />
-        <datalist id="known-tags">
-          {allTags.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
-        <button type="submit">Filter</button>
-      </form>
-
-      {TYPES.map((type) => (
-        <ObjectPickerModal
-          key={type}
-          type={type}
-          onPick={() => redirect(`/dashboard/objects`)}
-          triggerLabel={`+ New ${type}`}
-        />
-      ))}
-
-      {filtered.map((entry) => (
-        <div key={entry.rootVersionId}>
-          <h2>{entry.type}</h2>
-          <ul>
-            {entry.versions.map((v) => (
-              <li key={v.id}>
-                v{v.versionNumber}: {v.body.slice(0, 60)}
-                {v.tags.length > 0 && <span> — tags: {v.tags.join(', ')}</span>}
-                {' — used in: '}
-                {v.usedInResumeNames.length > 0 ? v.usedInResumeNames.join(', ') : 'none'}
-                <ObjectPickerModal
-                  type={entry.type as any}
-                  editingRootVersionId={entry.rootVersionId}
-                  onPick={() => redirect(`/dashboard/objects`)}
-                  triggerLabel="Edit"
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-    </div>
-  );
-}
-```
-
-Implementation deviates from the sketch above in two ways:
-
-1. **The flagged `onPick`/`redirect()` bug is real, not just "awkward"** — an async Server Component can't pass a plain closure to a Client Component prop (only Server Actions are allowed across that boundary); `() => redirect(...)` would fail outright. Fixed by splitting into `page.tsx` (Server Component — fetches/filters, `searchParams` awaited per Next.js 16's async API) and a new `ObjectDashboardClient.tsx` (Client Component — owns the interactive modals, `onPick` calls `router.refresh()` via `useRouter()`).
-2. **Layout rebuilt to match the actual Figma design** (`get_design_context` on node `8:215`), not the bare list this step originally sketched: objects grouped by type, each rendered as a bordered card with a horizontal scrollable row of version chips, the latest version highlighted (`#fff2a8`), and a dashed "→" chip that opens the edit/all-versions view. Added `ObjectDashboardClient.module.css` for this.
-3. **First Figma pass above was still wrong, corrected after re-pulling `get_design_context` on `8:196` (the actual "4a" node) and getting the user's read of it:**
-   - A bordered box = one object *family* (all versions sharing one `rootVersionId`), not a flat per-version list. A type section (e.g. "Work Experience") stacks **one box per distinct object** — Company A, Company B, Company C — each with its own filmstrip, not one shared card.
-   - The box's caption label is the **root (v1) version's identity field** (`company` for WORK_EXPERIENCE, `institution` for EDUCATION, etc. — see `IDENTITY_FIELD` below), not a truncated copy of any version's body text. SUMMARY has no identity field, so it falls back to a static "Summary" label.
-   - The filmstrip shows a **capped number of recent versions** (`CHIP_LIMIT = 3` in `ObjectDashboardClient.tsx`), not the full history — the dashed "→" chip is where the rest live.
-   - Each chip needed to show that version's own title/fields/created-date, which doesn't fit Figma's literal 120×42 placeholder box — chips were grown taller (fixed ~130px width, flexible height) to hold a compact multi-line block instead of matching the wireframe's exact pixel size.
-   - Added `src/lib/objects/fieldConfig.ts`: `FIELDS_BY_TYPE` (moved out of `ObjectPickerModal.tsx`, now shared) plus a new `IDENTITY_FIELD`/`getIdentityLabel` used by both the dashboard (captions/chip titles) and the picker modal.
-   - Fixed a real, separate bug found along the way: the create/edit form in `ObjectPickerModal.tsx` only ever sent `{ category, body }`, which only satisfies the SKILLS schema — WORK_EXPERIENCE, EDUCATION, PROJECT, CERTIFICATION, and EXTRACURRICULAR all failed Zod validation. Both forms now render each type's actual required/optional fields from `FIELDS_BY_TYPE` and submit them all; the edit form also prefills from the version's stored `fields`.
-   - Kept the per-section "+ New {type}" button and the type/tag filter form even though neither appears on the 4a screen — confirmed with the user as an intentional deviation (object creation needs an entry point outside the resume-builder flow too).
-   - `dashboard.ts` now also selects `fields` and `createdAt` per version so the chips have data to render.
-4. **Fixed layout waste**: `.card`'s `max-width: 373px` (copied straight from Figma's small mockup canvas) had boxes stacking in a single narrow column regardless of screen width, with no way for multiple objects in one type section to sit side by side. Wrapped entries in a flex-wrap `.entriesGrid` (`.card` now `flex: 1 1 373px; max-width: 480px`) so a type section with several objects (e.g. multiple WORK_EXPERIENCE companies) flows across the available width instead of piling straight down — verified live with two WORK_EXPERIENCE boxes rendering side by side. Also bumped `html { font-size: 18px }` in `globals.css` (was the unstyled 16px browser default) since every button/input/heading is sized in `rem` — this scales the whole app, not just this page.
-5. **Dropped the `type` filter dropdown entirely** (page.tsx no longer reads/filters on a `type` search param, `ObjectDashboardClient` no longer renders the `<select>`). It was redundant — the dashboard already groups everything into per-type sections — and per the user, type-scoping belongs to the resume-builder's object picker instead (Task 19), where it's already implicit: each section only ever opens `ObjectPickerModal` with a fixed `type` prop. The tag filter stays.
-6. **Fixed a hydration-mismatch bug**: the chip's `new Date(v.createdAt).toLocaleDateString()` formats using each environment's locale — server (Node default) rendered `8/23/2026`, the browser (Korean OS locale) rendered `2026. 8. 23.`, so React flagged a hydration mismatch and threw the tree away on every load. Swapped to `.toISOString().slice(0, 10)` (`2026-08-23`) — deterministic regardless of locale. Verified live: console clean, no hydration warning.
-7. **Added the missing `body` (Markdown content) to each chip** — the identity/fields/date info was there, but the actual Markdown body every object is created with was never rendered anywhere on the dashboard. Added a `.chipBody` block (3-line clamp) between the field lines and the date; `.versionRow` switched from default `align-items: stretch` to `flex-start` so a taller chip (longer body) doesn't force its siblings to stretch to match.
-8. **Added a tags input to both create and edit forms in `ObjectPickerModal.tsx`** — `createObjectAction`/`editObjectAction` already accepted a `tags: string[]` param (the dashboard's tag filter/`listTagsForUser` already existed), but nothing in the picker modal ever collected or sent tags, so the field was write-only from the server's perspective. Added a comma-separated `tags` text input to both forms (`parseTags()` helper splits/trims/drops empties), and the edit form prefills it from the version's stored `tags`. Verified live: created a SKILLS object tagged `devops, infra`, then confirmed the dashboard's tag filter (`?tags=devops`) correctly narrows down to it.
-9. **Removed the "all versions" edit form; replaced the plain version list with the same full-object chip used on the dashboard.** Per the user, "all versions" was only ever meant to be a browse/history view (see deviation 3's re-read of the Figma design), not an inline editor — the "Save new version" form there was a scope addition that didn't belong. Extracted the chip rendering (identity/fields/body/date) out of `ObjectDashboardClient.tsx` into a new shared `src/components/ObjectVersionChip.tsx` (+ `.module.css`), used by both the dashboard's filmstrip and the modal's "all versions" grid — one component, one look, per the user's explicit "use the same component with the outside one." Behavior differs by context: reached via the Dashboard's "→" (`editingRootVersionId` set) chips are plain, non-interactive `<div>`s — confirmed with the user that the dashboard doesn't need to pick a version, it's pure browsing; reached via the resume-builder picker's "+" (`editingRootVersionId` unset) chips stay clickable (`onClick` → `pick(v.id)`), since that path still needs to select an older version for a resume section. **Consequence, flagged not silently dropped:** removing the form also removed the only UI path that called `editObjectAction`/`editObjectVersion` — there is currently no way to create a new version of an existing object anywhere in the UI. `editObjectAction` itself is untouched and still tested; this is a UI gap to revisit, not a backend regression. Verified live: dev-server screenshot shows the dashboard rendering unchanged (still using the shared chip), and the "→" popup showing a rich, non-clickable chip with no form; 46/46 tests still pass; console clean.
-10. **Dropped the "latest = highlighted" convention; newer versions now render leftmost instead of rightmost.** Removed `ObjectVersionChip`'s `active`/`.chipActive` prop and CSS entirely (chips are now always the plain, unstyled-background variant). Both filmstrip call sites (`ObjectDashboardClient.tsx`'s `shown` slice and `ObjectPickerModal.tsx`'s "all versions" grid) now do `[...versions].reverse()` before slicing/rendering — the underlying arrays stay in the DB's natural ascending `versionNumber` order, only the display order flips. Verified: type-checks clean, 46/46 tests pass, dashboard screenshot confirms no yellow highlight remains. Couldn't visually confirm the left-ordering itself live in this pass, since deviation 9 just removed the only UI path to create a second version of an existing object — nothing on screen has more than one version to demonstrate the reorder with yet.
-11. **Added a "✎" edit icon, top-right of every box, that pre-fills the create-new form but still creates an independent object** (deliberately not a new version of the existing one — closes deviation 9's flagged gap, but not by resurrecting `editObjectAction`, by design). `ObjectPickerModal` gained a `prefillFrom?: ObjectSummary` prop: when set, `open()` still lands on the `'recent'` view, but the "Recent objects" fieldset is hidden and every field/body/tags input gets `defaultValue`s from `prefillFrom`; the submit handler is unchanged — still `createObjectAction`, so it always produces a new `rootVersionId`. `ObjectSummary.rootVersionId` had to become optional since the dashboard's per-version data (passed as `prefillFrom`) doesn't carry it — the "recent objects" `+`-to-`openAllVersions` callsite was guarded accordingly (`o.rootVersionId && openAllVersions(...)`), harmless since `recentObjects` is never actually populated by any current caller. Verified live end-to-end: clicked the pencil on "Acme Corp," changed the name to "Acme Corp EU," submitted — a fully independent third box appeared with its own version chip and its own edit icon, while the original "Acme Corp" box was untouched; 46/46 tests pass; console clean.
-12. **Tags were being collected and used for filtering but never actually displayed anywhere on a chip.** `ObjectVersionChip`'s `Version` type gained `tags?: string[]`, rendered as small pill badges (`.tags`/`.tag`) below the body. Both callers (dashboard's `DashboardEntry.versions` and the picker modal's `ObjectSummary`) already carried `tags` — no data plumbing needed, just the missing render. Verified live: the earlier "devops"-tagged test object now shows a visible tag pill on its chip.
-13. **Two corrections per the user, after seeing 11 and the wrap-fix from deviation 4 together:** (a) the edit icon belongs on each individual chip/version, not once per box/filmstrip — moved it from `.card`'s corner into `ObjectVersionChip` itself via a new `editTrigger?: React.ReactNode` slot (absolutely positioned within the chip, only meaningful on the non-`onClick` `<div>` variant — nesting it in the `<button>` variant would be invalid HTML), so each chip now prefills from *that specific version*, not always the box's latest. The redundant `triggerClassName` prop from deviation 11 was removed again (`ObjectVersionChip.module.css`'s `.editTrigger button` selector already styles whatever's dropped into the slot, so the dashboard no longer needs to pass its own button styling in). (b) Reverted deviation 4's "let boxes wrap side by side" — the user now wants **one filmstrip per line**: `.entriesGrid` switched from `flex-wrap: wrap` back to `flex-direction: column`, and `.card` from `flex: 1 1 373px; max-width: 480px` to `width: 100%`. Verified live: dashboard screenshot shows Acme Corp/Globex Corp/Acme Corp EU each on their own full-width line, and clicking a specific chip's pencil prefills from that exact version (confirmed on "Acme Corp"'s own chip, not the box); 46/46 tests pass; console clean.
-14. **Deviation 11 got explicitly reversed by the user as a bug report** ("editing an object should create a new version with same rootVersionId") — before acting on it, verified with a direct `psql` query against the dev DB that the dashboard's grouping itself was never broken (a genuinely multi-version root from another test user correctly rendered as one box; every root under the *current* user had exactly one version each, so no same-root split could have been observed) — the several near-identical "Acme Corp" boxes the user was seeing were an emergent *consequence* of deviation 11's explicit design (every edit-icon submission mints a new root by intent) plus some accidental duplicate submissions from my own flaky browser-automation clicks, not a grouping defect. Fixed by restoring the actual edit semantics: the "edit fields, then save" form now calls `editObjectAction(prefillFrom.id, fields, body, tags)` when `prefillFrom` is set (same root, `versionNumber` incremented) instead of always `createObjectAction`; `editObjectAction`'s import came back, dialog copy reverted from "Edit … (creates a new object)"/"Create" to "Edit …"/"Save new version". Verified live end-to-end + at the DB layer: edited "Globex Corp"'s title to "VP of Product," the box gained a second chip ("VP of Product" now leftmost, "Product Manager" still present) under the *same* box instead of spawning a new one; `psql` confirmed both rows share `rootVersionId = 3d8745ba-…` with `versionNumber` 1 and 2. 46/46 tests pass; console clean.
-15. **Three more fixes, found while the user was verifying deviation 14:** (a) the chip never actually showed a date *range* — `secondaryFields.slice(0, 2)` for WORK_EXPERIENCE happened to grab `title`/`location` and silently cut off `startDate`/`endDate`, so the collected dates never rendered anywhere. `ObjectVersionChip.tsx` now splits `secondaryFields` into date-typed (`type: 'month'`) vs. other fields, and renders the date pair as its own dedicated "start – end" (or "start – Present") line, independent of the arbitrary top-2 slice for the rest. (b) Per the user, day-level precision isn't needed — every date field across `FIELDS_BY_TYPE` (`startDate`/`endDate`/`issueDate`/`expiryDate`) switched from `type: 'date'` to `type: 'month'`, so the native input now collects just year+month (`YYYY-MM`). No schema change needed — `schemas.ts` never enforced a date format, just `z.string()`. (c) Also restored "same component in All versions" properly, after the user asked whether the same component was really being reused: `ObjectVersionChip` no longer branches into a `<button>` vs `<div>` — it's always a `<div>` now, with `onClick`/`role="button"`/`tabIndex`/`onKeyDown` added directly to it (a `<button>` can't nest another interactive trigger, which had blocked adding edit icons to the picker-mode "all versions" chips before). `editTrigger`'s wrapper calls `stopPropagation` so clicking the pencil doesn't also fire the pick handler. `ObjectPickerModal`'s "all versions" grid now passes `editTrigger` on every chip, matching the dashboard. Both files were re-confirmed to import the one and only `src/components/ObjectVersionChip.tsx` — no duplicate/second implementation exists. Type-checks clean, 46/46 tests pass; user is verifying live themselves this round, not yet confirmed.
-16. **Date range display switched from raw `YYYY-MM` to `MMM-YYYY`** (e.g. "Jan-2023"). Added `formatMonthYear()` to `ObjectVersionChip.tsx` — a hardcoded `MONTH_ABBR` array indexed by month number, deliberately not `Intl.DateTimeFormat`/`toLocaleDateString` (same class of server/client locale-mismatch bug fixed back in deviation 6). Tolerates legacy day-precision values (`"2023-01-15".split('-')` still yields the right year/month, the day is just ignored) and falls back to the raw string if the value doesn't parse as `YYYY-MM`. Only applied to the start/end range — the `createdAt` footer stays full-precision since it's a real timestamp, not a user-entered month field. Type-checks clean, 46/46 tests pass.
+Full round-by-round detail (Figma re-reads, every live/DB verification, the reverted edit-vs-copy decision) is in the shipping commit's message, not reproduced here.
 
 - [x] **Step 3: Manually verify**
 
-Verified structurally (compiles, type-checks clean, 46/46 tests pass, dev-server screenshot confirms the layout and the "Add Object" modal render correctly, sidebar highlights "O" as active). Full interactive click-through (create/edit/filter round-trips) left to you this time, not run by me. The deviation-3 fixes above were verified live afterward: created a real WORK_EXPERIENCE object through the now-type-aware form (Company/Title/Location/dates all validated and saved) and confirmed both it and the earlier SKILLS object render as boxes with caption + filmstrip + dashed "→", matching the corrected 4a read.
+Verified structurally (compiles, type-checks clean, 46/46 tests pass) and live at every round described in Step 2 above — real objects of multiple types created through the type-aware form, tag filtering, edit-in-place confirmed against the DB, hydration warnings gone from the console. Full click-through is yours to do too; nothing here is taken on faith alone.
 
 - [x] **Step 4: Commit**
 
