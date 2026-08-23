@@ -47,7 +47,7 @@ Two decisions shape this model, both applied consistently:
 
 ```mermaid
 erDiagram
-    USER ||--|| PROFILE : has
+    USER ||--o| PROFILE : has
     USER ||--o{ OBJECT_VERSION : owns
     USER ||--o{ RESUME_VERSION : owns
     RESUME_VERSION ||--o{ RESUME_VERSION_SECTION : has
@@ -59,6 +59,7 @@ erDiagram
         uuid id
         string email
         string passwordHash
+        timestamp createdAt
     }
     PROFILE {
         uuid id
