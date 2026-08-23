@@ -2,7 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { ObjectPickerModal } from '@/components/ObjectPickerModal';
+import { ObjectVersionChip } from '@/components/ObjectVersionChip';
 import type { ObjectType } from '@/lib/objects/schemas';
+import { getIdentityLabel } from '@/lib/objects/fieldConfig';
 import styles from './ObjectDashboardClient.module.css';
 
 const TYPES: ObjectType[] = [
@@ -15,6 +17,9 @@ const TYPES: ObjectType[] = [
   'EXTRACURRICULAR',
 ];
 
+// How many recent versions to show in a filmstrip before you have to open "→" for the rest.
+const CHIP_LIMIT = 3;
+
 type DashboardEntry = {
   rootVersionId: string;
   type: string;
@@ -22,6 +27,8 @@ type DashboardEntry = {
     id: string;
     versionNumber: number;
     body: string;
+    fields: unknown;
+    createdAt: string | Date;
     tags: string[];
     usedInResumeNames: string[];
   }>;
@@ -30,12 +37,10 @@ type DashboardEntry = {
 export function ObjectDashboardClient({
   dashboard,
   allTags,
-  searchType,
   searchTags,
 }: {
   dashboard: DashboardEntry[];
   allTags: string[];
-  searchType?: string;
   searchTags?: string;
 }) {
   const router = useRouter();
@@ -46,14 +51,6 @@ export function ObjectDashboardClient({
       <h1>Objects</h1>
 
       <form>
-        <select name="type" defaultValue={searchType ?? ''}>
-          <option value="">All types</option>
-          {TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
         <input name="tags" defaultValue={searchTags ?? ''} placeholder="Tags, comma-separated" list="known-tags" />
         <datalist id="known-tags">
           {allTags.map((t) => (
@@ -69,36 +66,38 @@ export function ObjectDashboardClient({
           <section key={type}>
             <h2>{type}</h2>
             <ObjectPickerModal type={type} onPick={refresh} triggerLabel={`+ New ${type}`} />
-            {entries.map((entry) => {
-              const latest = entry.versions[entry.versions.length - 1];
-              return (
-                <div key={entry.rootVersionId} className={styles.card}>
-                  <div className={styles.caption}>{latest.body.slice(0, 40)}</div>
-                  <div className={styles.versionRow}>
-                    {entry.versions.map((v) => (
-                      <div
-                        key={v.id}
-                        className={v.id === latest.id ? styles.chipActive : styles.chip}
-                        title={v.tags.length > 0 ? `tags: ${v.tags.join(', ')}` : undefined}
-                      >
-                        v{v.versionNumber}: {v.body.slice(0, 30)}
-                        <div className={styles.usedIn}>
-                          {v.usedInResumeNames.length > 0 ? v.usedInResumeNames.join(', ') : 'not used'}
-                        </div>
+            <div className={styles.entriesGrid}>
+              {entries.map((entry) => {
+                const root = entry.versions[0];
+                // Newest first (left-to-right): reverse the ascending list, then take the recent window.
+                const shown = [...entry.versions].reverse().slice(0, CHIP_LIMIT);
+                return (
+                  <div key={entry.rootVersionId} className={styles.card}>
+                    <div className={styles.caption}>{getIdentityLabel(type, root.fields)}</div>
+                    <div className={styles.versionRow}>
+                      {shown.map((v) => (
+                        <ObjectVersionChip
+                          key={v.id}
+                          type={type}
+                          version={v}
+                          editTrigger={
+                            <ObjectPickerModal type={type} prefillFrom={v} onPick={refresh} triggerLabel="✎" />
+                          }
+                        />
+                      ))}
+                      <div className={styles.moreChip}>
+                        <ObjectPickerModal
+                          type={type}
+                          editingRootVersionId={entry.rootVersionId}
+                          onPick={refresh}
+                          triggerLabel="→"
+                        />
                       </div>
-                    ))}
-                    <div className={styles.moreChip}>
-                      <ObjectPickerModal
-                        type={type}
-                        editingRootVersionId={entry.rootVersionId}
-                        onPick={refresh}
-                        triggerLabel="→"
-                      />
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </section>
         );
       })}

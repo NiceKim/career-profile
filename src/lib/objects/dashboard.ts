@@ -23,6 +23,8 @@ export async function getObjectDashboard(userId: string) {
       id: v.id,
       versionNumber: v.versionNumber,
       body: v.body,
+      fields: v.fields,
+      createdAt: v.createdAt,
       tags: v.tags,
       usedInResumeNames: v.resumeVersionItems.map((item) => item.resumeVersion.name),
     })),

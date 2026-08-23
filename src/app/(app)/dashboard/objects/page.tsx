@@ -6,18 +6,17 @@ import { ObjectDashboardClient } from './ObjectDashboardClient';
 export default async function ObjectDashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; tags?: string }>;
+  searchParams: Promise<{ tags?: string }>;
 }) {
-  const { type, tags } = await searchParams;
+  const { tags } = await searchParams;
   const userId = await getCurrentUserId();
   const [dashboard, allTags] = await Promise.all([getObjectDashboard(userId), listTagsForUser(userId)]);
 
   const activeTags = tags ? tags.split(',').map((t) => t.trim()) : [];
   const filtered = dashboard.filter((entry) => {
-    if (type && entry.type !== type) return false;
     if (activeTags.length === 0) return true;
     return entry.versions.some((v) => v.tags.some((t) => activeTags.includes(t)));
   });
 
-  return <ObjectDashboardClient dashboard={filtered} allTags={allTags} searchType={type} searchTags={tags} />;
+  return <ObjectDashboardClient dashboard={filtered} allTags={allTags} searchTags={tags} />;
 }

@@ -3,8 +3,26 @@
 import { useRef, useState } from 'react';
 import { createObjectAction, editObjectAction, getObjectHistoryAction } from '@/app/objects/actions';
 import type { ObjectType } from '@/lib/objects/schemas';
+import { FIELDS_BY_TYPE } from '@/lib/objects/fieldConfig';
+import { ObjectVersionChip } from './ObjectVersionChip';
+import styles from './ObjectPickerModal.module.css';
 
-type ObjectSummary = { id: string; rootVersionId: string; body: string; versionNumber: number };
+type ObjectSummary = {
+  id: string;
+  rootVersionId?: string;
+  body: string;
+  versionNumber: number;
+  fields?: unknown;
+  tags?: string[];
+  createdAt?: string | Date;
+};
+
+function parseTags(raw: FormDataEntryValue | null): string[] {
+  return String(raw ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
 
 type Props = {
   type: ObjectType;
@@ -12,6 +30,9 @@ type Props = {
   onPick: (objectVersionId: string) => void;
   triggerLabel?: string;
   editingRootVersionId?: string;
+  // Prefills the form from this version's fields/body/tags. Submitting saves a new version
+  // of this same object (same rootVersionId) via editObjectAction — an edit-in-place, not a copy.
+  prefillFrom?: ObjectSummary;
 };
 
 export function ObjectPickerModal({
@@ -20,6 +41,7 @@ export function ObjectPickerModal({
   onPick,
   triggerLabel = '+ Object',
   editingRootVersionId,
+  prefillFrom,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [view, setView] = useState<'recent' | 'allVersions'>('recent');
@@ -44,6 +66,8 @@ export function ObjectPickerModal({
     dialogRef.current?.close();
   }
 
+  const prefillFields = (prefillFrom?.fields as Record<string, unknown> | undefined) ?? {};
+
   return (
     <>
       <button type="button" onClick={open}>
@@ -56,35 +80,54 @@ export function ObjectPickerModal({
 
         {view === 'recent' && (
           <>
-            <h2>Add Object — {type}</h2>
+            <h2>{prefillFrom ? `Edit ${type}` : `Add Object — ${type}`}</h2>
+            {!prefillFrom && (
+              <fieldset>
+                <legend>Recent objects</legend>
+                {recentObjects.map((o) => (
+                  <span key={o.id}>
+                    <button type="button" onClick={() => pick(o.id)}>
+                      {o.body.slice(0, 20)}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => o.rootVersionId && openAllVersions(o.rootVersionId)}
+                      aria-label="See all versions"
+                    >
+                      +
+                    </button>
+                  </span>
+                ))}
+              </fieldset>
+            )}
             <fieldset>
-              <legend>Recent objects</legend>
-              {recentObjects.map((o) => (
-                <span key={o.id}>
-                  <button type="button" onClick={() => pick(o.id)}>
-                    {o.body.slice(0, 20)}
-                  </button>
-                  <button type="button" onClick={() => openAllVersions(o.rootVersionId)} aria-label="See all versions">
-                    +
-                  </button>
-                </span>
-              ))}
-            </fieldset>
-            <fieldset>
-              <legend>or create new</legend>
+              <legend>{prefillFrom ? 'Edit fields, then save' : 'or create new'}</legend>
               <form
                 action={async (formData) => {
-                  const { id } = await createObjectAction(
-                    type,
-                    { category: String(formData.get('category') ?? '') },
-                    String(formData.get('body'))
+                  const fields = Object.fromEntries(
+                    FIELDS_BY_TYPE[type].map((f) => [f.name, String(formData.get(f.name) ?? '')])
                   );
+                  const body = String(formData.get('body'));
+                  const tags = parseTags(formData.get('tags'));
+                  const { id } = prefillFrom
+                    ? await editObjectAction(prefillFrom.id, fields, body, tags)
+                    : await createObjectAction(type, fields, body, tags);
                   pick(id);
                 }}
               >
-                <input name="category" placeholder="Title / category" />
-                <textarea name="body" placeholder="Markdown content" required />
-                <button type="submit">Create</button>
+                {FIELDS_BY_TYPE[type].map((f) => (
+                  <input
+                    key={f.name}
+                    name={f.name}
+                    type={f.type ?? 'text'}
+                    placeholder={f.label}
+                    required={f.required}
+                    defaultValue={String(prefillFields[f.name] ?? '')}
+                  />
+                ))}
+                <textarea name="body" placeholder="Markdown content" required defaultValue={prefillFrom?.body ?? ''} />
+                <input name="tags" placeholder="Tags, comma-separated" defaultValue={prefillFrom?.tags?.join(', ') ?? ''} />
+                <button type="submit">{prefillFrom ? 'Save new version' : 'Create'}</button>
               </form>
             </fieldset>
           </>
@@ -93,29 +136,17 @@ export function ObjectPickerModal({
         {view === 'allVersions' && (
           <>
             <h2>All versions</h2>
-            <ul>
-              {allVersions.map((v) => (
-                <li key={v.id}>
-                  <button type="button" onClick={() => pick(v.id)}>
-                    v{v.versionNumber}: {v.body.slice(0, 40)}
-                  </button>
-                </li>
+            <div className={styles.versionsGrid}>
+              {[...allVersions].reverse().map((v) => (
+                <ObjectVersionChip
+                  key={v.id}
+                  type={type}
+                  version={v}
+                  onClick={editingRootVersionId ? undefined : () => pick(v.id)}
+                  editTrigger={<ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" />}
+                />
               ))}
-            </ul>
-            <form
-              action={async (formData) => {
-                const latest = allVersions[allVersions.length - 1];
-                const { id } = await editObjectAction(
-                  latest.id,
-                  { category: String(formData.get('category') ?? '') },
-                  String(formData.get('body'))
-                );
-                pick(id);
-              }}
-            >
-              <textarea name="body" placeholder="Edit and save as a new version" required defaultValue={allVersions.at(-1)?.body} />
-              <button type="submit">Save new version</button>
-            </form>
+            </div>
             {!editingRootVersionId && (
               <button type="button" onClick={() => setView('recent')}>
                 ← Back
