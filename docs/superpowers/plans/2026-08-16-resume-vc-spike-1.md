@@ -35,41 +35,54 @@ src/
     objects/
       schemas.ts                 Zod field schema per ObjectType
       versioning.ts               createObjectVersion, editObjectVersion
-      queries.ts                  listObjectsForUser, getObjectHistory
+      queries.ts                  listObjectsForUser, listLatestObjectsForUser, getObjectHistory
       dashboard.ts                 getObjectDashboard (reverse "used in" lookup)
 
     resumes/
       versioning.ts                createResumeFromScratch, editResume, forkResume, isHeadVersion
-      queries.ts                    getLatestVersionsForUser, getResumeVersionWithContent, getResumeForest
+      queries.ts                    getLatestVersionsForUser, getResumeVersionWithContent, getResumeForest, getResumeTreeHistory
 
     profile.ts                      getProfile, upsertProfile
 
     ai/
       context.ts                    buildCareerContext (pure formatter: DB rows -> prompt text)
 
+  components/
+    Sidebar.tsx                     Persistent, collapsible nav (R/O/AI + profile avatar) — every (app) page
+    ObjectPickerModal.tsx           Shared picker/editor modal — recent objects, "see all versions", create new
+
   app/
-    signup/page.tsx                 Signup form
-    login/page.tsx                  Login form
+    signup/page.tsx                 Signup form (no sidebar — outside the (app) group)
+    login/page.tsx                  Login form (no sidebar — outside the (app) group)
     api/auth/[...nextauth]/route.ts next-auth route handler
 
+    (app)/
+      layout.tsx                    Auth-gated shell — redirects to /login, renders <Sidebar>
+
+      dashboard/
+        resumes/page.tsx            Resume forest, flat indented rows
+        objects/page.tsx            Object dashboard — browse, create, edit (no separate object list page)
+
+      resumes/
+        ResumeForm.tsx               Shared client form for new/edit/fork (picker-modal driven sections)
+        new/page.tsx                 Create resume from scratch
+        [id]/page.tsx                 View one resume version — Resume / History / Chat(stub) tabs
+        [id]/HistoryTab.tsx           Every version in this resume's tree
+        [id]/edit/page.tsx            Edit form, pre-filled
+        [id]/fork/page.tsx            Fork form, pre-filled from source
+        actions.ts                    createResumeAction, editResumeAction, forkResumeAction
+
+      profile/
+        page.tsx                     View/edit live profile fields, log out
+        actions.ts                    updateProfileAction
+        LogoutButton.tsx              Client wrapper for next-auth's signOut
+
+      qna/page.tsx                    Chat UI (useChat), ChatGPT/Claude-style
+
     objects/
-      page.tsx                      Object list + create form
-      [rootVersionId]/edit/page.tsx  Edit form (creates new version)
-      actions.ts                    createObjectAction, editObjectAction
-
-    resumes/
-      new/page.tsx                  Create resume from scratch
-      [id]/page.tsx                 View one resume version
-      [id]/edit/page.tsx            Edit form (section/item picker)
-      [id]/fork/page.tsx            Fork form, pre-filled from source (section/item picker)
-      actions.ts                    createResumeAction, editResumeAction, forkResumeAction
-
-    dashboard/
-      resumes/page.tsx              Resume forest view
-      objects/page.tsx              Object dashboard view
+      actions.ts                    createObjectAction, editObjectAction, listLatestObjectsAction, getObjectHistoryAction
 
     api/qna/route.ts                Streaming Q&A endpoint
-    qna/page.tsx                    Chat UI (useChat)
 
 test/
   db.ts                             resetDb() — truncates all tables between tests
@@ -1827,7 +1840,144 @@ git commit -m "feat: add resume server actions"
 
 ---
 
-### Task 14: Auth UI (signup, login)
+### Task 14: Data layer additions for the UI
+
+**Files:**
+- Modify: `src/lib/objects/queries.ts` / `src/lib/objects/queries.test.ts` (add `listLatestObjectsForUser`)
+- Modify: `src/lib/resumes/queries.ts` / `src/lib/resumes/queries.test.ts` (add `getResumeTreeHistory`)
+- Modify: `src/app/objects/actions.ts` / `src/app/objects/actions.test.ts` (add `listLatestObjectsAction`, `getObjectHistoryAction`)
+
+**Interfaces:**
+- Consumes: `prisma`, `getObjectHistory` (`src/lib/objects/queries.ts`), `getCurrentUserId`
+- Produces:
+  - `listLatestObjectsForUser(userId: string, type?: ObjectType): Promise<ObjectVersion[]>` — one row per object (its latest version), optionally filtered by `type`. Powers the Resume Create modal's "recent objects" picker — `listObjectsForUser` (every version) would be far too cluttered for a quick-pick list.
+  - `getResumeTreeHistory(userId: string, rootVersionId: string): Promise<ResumeVersion[]>` — every version in one resume tree, oldest first. Powers the Resume Screen's History tab.
+  - `listLatestObjectsAction(type?: ObjectType): Promise<ObjectVersion[]>` / `getObjectHistoryAction(rootVersionId: string): Promise<ObjectVersion[]>` — thin session-scoped Server Action wrappers, since the picker modal (Task 18) is a client component and can't call `lib/` functions directly.
+
+- [ ] **Step 1: Write the failing tests**
+
+```ts
+// src/lib/objects/queries.test.ts — add this test to the existing file
+it('lists only the latest version of each object, optionally filtered by type', async () => {
+  const user = await prisma.user.create({ data: { email: 'u2@example.com', passwordHash: 'x' } });
+  const v1 = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+  const v2 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
+  await createObjectVersion(user.id, 'SUMMARY', {}, 'Backend engineer');
+
+  const skillsOnly = await listLatestObjectsForUser(user.id, 'SKILLS');
+  expect(skillsOnly).toHaveLength(1);
+  expect(skillsOnly[0].id).toBe(v2.id);
+
+  const all = await listLatestObjectsForUser(user.id);
+  expect(all).toHaveLength(2);
+});
+```
+
+```ts
+// src/lib/resumes/queries.test.ts — add this test to the existing file
+it('returns every version in one tree, oldest first', async () => {
+  const user = await prisma.user.create({ data: { email: 'u3@example.com', passwordHash: 'x' } });
+  const v1 = await createResumeFromScratch(user.id, 'Original');
+  const v2 = await editResume(user.id, v1.id, 'v2', []);
+
+  const history = await getResumeTreeHistory(user.id, v1.rootVersionId);
+  expect(history.map((v) => v.id)).toEqual([v1.id, v2.id]);
+});
+```
+
+```ts
+// src/app/objects/actions.test.ts — add these tests to the existing file
+it('listLatestObjectsAction scopes to the current session user', async () => {
+  const user = await prisma.user.create({ data: { email: 'u4@example.com', passwordHash: 'x' } });
+  vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
+  await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
+
+  const result = await listLatestObjectsAction('SKILLS');
+  expect(result).toHaveLength(1);
+});
+
+it('getObjectHistoryAction returns every version for the given root', async () => {
+  const user = await prisma.user.create({ data: { email: 'u5@example.com', passwordHash: 'x' } });
+  vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
+  const created = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
+  await editObjectAction(created.id, { category: 'Languages' }, 'Python, TypeScript');
+
+  const history = await getObjectHistoryAction(created.id);
+  expect(history).toHaveLength(2);
+});
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `npm test -- src/lib/objects/queries.test.ts src/lib/resumes/queries.test.ts src/app/objects/actions.test.ts`
+Expected: FAIL — new imports don't exist yet.
+
+- [ ] **Step 3: Write the implementations**
+
+```ts
+// src/lib/objects/queries.ts — add this export
+export async function listLatestObjectsForUser(userId: string, type?: ObjectType) {
+  const versions = await prisma.objectVersion.findMany({
+    where: {
+      ownerUserId: userId,
+      ...(type ? { type } : {}),
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  const seenRoots = new Set<string>();
+  const latest = [];
+  for (const v of versions) {
+    if (!seenRoots.has(v.rootVersionId)) {
+      seenRoots.add(v.rootVersionId);
+      latest.push(v);
+    }
+  }
+  return latest;
+}
+```
+
+```ts
+// src/lib/resumes/queries.ts — add this export
+export async function getResumeTreeHistory(userId: string, rootVersionId: string) {
+  return prisma.resumeVersion.findMany({
+    where: { ownerUserId: userId, rootVersionId },
+    orderBy: { createdAt: 'asc' },
+  });
+}
+```
+
+```ts
+// src/app/objects/actions.ts — add these exports
+import { listLatestObjectsForUser, getObjectHistory } from '@/lib/objects/queries';
+
+export async function listLatestObjectsAction(type?: ObjectType) {
+  const userId = await getCurrentUserId();
+  return listLatestObjectsForUser(userId, type);
+}
+
+export async function getObjectHistoryAction(rootVersionId: string) {
+  const userId = await getCurrentUserId();
+  return getObjectHistory(userId, rootVersionId);
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `npm test -- src/lib/objects/queries.test.ts src/lib/resumes/queries.test.ts src/app/objects/actions.test.ts`
+Expected: PASS (6 tests in `objects/queries.test.ts`, 5 in `resumes/queries.test.ts`, 6 in `objects/actions.test.ts`)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add latest-objects and resume-tree-history queries for the UI"
+```
+
+---
+
+### Task 15: Auth UI (signup, login)
+
+Unchanged from the original plan — no design exists for these in Figma, built freely. Lives outside `(app)/`, so no sidebar.
 
 **Files:**
 - Create: `src/app/signup/page.tsx`
@@ -1906,7 +2056,7 @@ export default function LoginPage() {
 - [ ] **Step 4: Manually verify**
 
 Run: `npm run dev`, visit `http://localhost:3000/signup`, create an account, then log in at `/login`.
-Expected: signup redirects to `/login`; login redirects to `/dashboard/resumes` (404 until Task 16 — that's fine for now).
+Expected: signup redirects to `/login`; login redirects to `/dashboard/resumes` and now shows the sidebar (Task 16).
 
 - [ ] **Step 5: Commit**
 
@@ -1917,471 +2067,346 @@ git commit -m "feat: add signup and login pages"
 
 ---
 
-### Task 15: Object UI (list, create, edit)
+### Task 16: Shared app shell (sidebar layout)
+
+Every authenticated page shares one persistent, collapsible sidebar (confirmed against the Figma design): **R** (Resumes), **O** (Objects), **AI** (Career Q&A), plus a user avatar at the bottom that's the entry point to the Profile page. Everything under this shell moves into a `(app)` route group — route groups don't affect the URL, so `/dashboard/resumes` etc. stay exactly where they are. `signup`/`login` (Task 15) stay outside `(app)` — no sidebar, since there's no session yet.
 
 **Files:**
-- Create: `src/app/objects/page.tsx`
-- Create: `src/app/objects/[rootVersionId]/edit/page.tsx`
+- Create: `src/app/(app)/layout.tsx`
+- Create: `src/components/Sidebar.tsx`
 
 **Interfaces:**
-- Consumes: `getCurrentUserId`, `listObjectsForUser`/`getObjectHistory`/`listTagsForUser` (`src/lib/objects/queries.ts`), `createObjectAction`/`editObjectAction` (`src/app/objects/actions.ts`)
-- Produces: working `/objects` list+create page (`?type=` filters server-side via `listObjectsForUser`; `?tags=` filters the already-fetched list client-side) and `/objects/[rootVersionId]/edit` edit page.
+- Consumes: `auth` (`src/lib/auth.ts`)
+- Produces: `AppLayout` — wraps every page under `(app)/`, redirects to `/login` if there's no session, and renders `<Sidebar>` + the page content side by side.
 
-- [ ] **Step 1: Write the list + create page**
+- [ ] **Step 1: Write the sidebar component**
 
 ```tsx
-// src/app/objects/page.tsx
-import { getCurrentUserId } from '@/lib/session';
-import { listObjectsForUser, listTagsForUser } from '@/lib/objects/queries';
-import { createObjectAction } from './actions';
+// src/components/Sidebar.tsx
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 
-function parseTags(raw: string) {
-  return raw
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
+const links = [
+  { href: '/dashboard/resumes', label: 'R', title: 'Resumes' },
+  { href: '/dashboard/objects', label: 'O', title: 'Objects' },
+  { href: '/qna', label: 'AI', title: 'Career Q&A' },
+];
 
-export default async function ObjectsPage({
-  searchParams,
-}: {
-  searchParams: { type?: string; tags?: string };
-}) {
-  const userId = await getCurrentUserId();
-  const [objects, allTags] = await Promise.all([
-    listObjectsForUser(userId, searchParams.type as any),
-    listTagsForUser(userId),
-  ]);
-  const activeTags = searchParams.tags ? parseTags(searchParams.tags) : [];
-  const filtered =
-    activeTags.length > 0
-      ? objects.filter((o) => o.tags.some((t) => activeTags.includes(t)))
-      : objects;
+export function Sidebar({ initial }: { initial: string }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const pathname = usePathname();
 
   return (
-    <div>
-      <h1>Objects</h1>
-
-      <form>
-        <label>
-          Type:
-          <select name="type" defaultValue={searchParams.type ?? ''}>
-            <option value="">All</option>
-            <option value="WORK_EXPERIENCE">Work Experience</option>
-            <option value="EDUCATION">Education</option>
-            <option value="SKILLS">Skills</option>
-            <option value="SUMMARY">Summary</option>
-            <option value="PROJECT">Project</option>
-            <option value="CERTIFICATION">Certification</option>
-            <option value="EXTRACURRICULAR">Extracurricular</option>
-          </select>
-        </label>
-        <label>
-          Filter by tags (comma-separated):
-          <input name="tags" defaultValue={searchParams.tags ?? ''} list="known-tags" />
-        </label>
-        <datalist id="known-tags">
-          {allTags.map((t) => (
-            <option key={t} value={t} />
-          ))}
-        </datalist>
-        <button type="submit">Filter</button>
-        <Link href="/objects">Clear</Link>
-      </form>
-
+    <nav aria-label="Main" style={{ width: collapsed ? 48 : 160 }}>
+      <button type="button" onClick={() => setCollapsed((c) => !c)} aria-label="Toggle sidebar">
+        {collapsed ? '»' : '«'}
+      </button>
       <ul>
-        {filtered.map((o) => (
-          <li key={o.id}>
-            <Link href={`/objects/${o.rootVersionId}/edit`}>
-              [{o.type}] {o.body.slice(0, 60)} (v{o.versionNumber})
+        {links.map((link) => (
+          <li key={link.href}>
+            <Link
+              href={link.href}
+              title={link.title}
+              aria-current={pathname.startsWith(link.href) ? 'page' : undefined}
+            >
+              {collapsed ? link.label : `${link.label} — ${link.title}`}
             </Link>
-            {o.tags.length > 0 && <span> — tags: {o.tags.join(', ')}</span>}
           </li>
         ))}
       </ul>
-
-      <form
-        action={async (formData) => {
-          'use server';
-          await createObjectAction(
-            formData.get('type') as any,
-            { category: formData.get('category') },
-            String(formData.get('body')),
-            parseTags(String(formData.get('tags') ?? ''))
-          );
-        }}
-      >
-        <select name="type" required>
-          <option value="WORK_EXPERIENCE">Work Experience</option>
-          <option value="EDUCATION">Education</option>
-          <option value="SKILLS">Skills</option>
-          <option value="SUMMARY">Summary</option>
-          <option value="PROJECT">Project</option>
-          <option value="CERTIFICATION">Certification</option>
-          <option value="EXTRACURRICULAR">Extracurricular</option>
-        </select>
-        <input name="category" placeholder="Category (Skills only)" />
-        <textarea name="body" placeholder="Markdown content" required />
-        <input name="tags" placeholder="Tags, comma-separated (e.g. Backend, AI)" list="known-tags" />
-        <button type="submit">Create</button>
-      </form>
-    </div>
+      <Link href="/profile" title="Profile">
+        {initial}
+      </Link>
+    </nav>
   );
 }
 ```
 
-- [ ] **Step 2: Write the edit page**
+The avatar is a plain `Link` to `/profile` rather than a popover menu — Profile itself hosts the "Log out" action (Task 17), so there's no separate menu component to build.
+
+- [ ] **Step 2: Write the layout**
 
 ```tsx
-// src/app/objects/[rootVersionId]/edit/page.tsx
-import { getCurrentUserId } from '@/lib/session';
-import { getObjectHistory } from '@/lib/objects/queries';
-import { editObjectAction } from '../../actions';
+// src/app/(app)/layout.tsx
+import { redirect } from 'next/navigation';
+import { auth } from '@/lib/auth';
+import { Sidebar } from '@/components/Sidebar';
 
-function parseTags(raw: string) {
-  return raw
-    .split(',')
-    .map((t) => t.trim())
-    .filter(Boolean);
-}
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const session = await auth();
+  if (!session?.user) redirect('/login');
 
-export default async function EditObjectPage({
-  params,
-}: {
-  params: { rootVersionId: string };
-}) {
-  const userId = await getCurrentUserId();
-  const history = await getObjectHistory(userId, params.rootVersionId);
-  const latest = history[history.length - 1];
+  const initial = (session.user.email ?? '?').slice(0, 1).toUpperCase();
 
   return (
-    <div>
-      <h1>Edit {latest.type}</h1>
-      <form
-        action={async (formData) => {
-          'use server';
-          await editObjectAction(
-            latest.id,
-            latest.fields,
-            String(formData.get('body')),
-            parseTags(String(formData.get('tags') ?? ''))
-          );
-        }}
-      >
-        <textarea name="body" defaultValue={latest.body} required />
-        <input name="tags" defaultValue={latest.tags.join(', ')} placeholder="Tags, comma-separated" />
-        <button type="submit">Save new version</button>
-      </form>
-
-      <h2>History</h2>
-      <ul>
-        {history.map((v) => (
-          <li key={v.id}>
-            v{v.versionNumber}: {v.body.slice(0, 60)}
-            {v.tags.length > 0 && <span> — tags: {v.tags.join(', ')}</span>}
-          </li>
-        ))}
-      </ul>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      <Sidebar initial={initial} />
+      <main style={{ flex: 1 }}>{children}</main>
     </div>
   );
 }
 ```
+
+Every existing page's own `getCurrentUserId()` call still matters — the layout's redirect is a friendlier guard, not a replacement for the value each page actually needs to scope its queries.
 
 - [ ] **Step 3: Manually verify**
 
-Run: `npm run dev`, log in, visit `/objects`, create a Skills object tagged `Backend`, create a second tagged `Frontend`, filter by `Backend` and confirm only the first shows, then edit the first and confirm its tags persist on the new version.
+Run: `npm run dev`. Visiting any `(app)` route while logged out redirects to `/login`. Once logged in, every page shows the sidebar with R/O/AI links and a collapse toggle that persists across the session (client-side state — a page refresh resets it, which is acceptable for Spike 1).
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: add object list, create, and edit pages"
+git commit -m "feat: add shared sidebar layout for authenticated pages"
 ```
 
 ---
 
-### Task 16: Resume UI (create, view, edit, fork)
+### Task 17: Profile UI
+
+Not in Figma at all, and not in the original plan's file list either — genuinely new scope, added because the sidebar avatar needs somewhere to go. Reached only via the sidebar avatar (Task 16), not one of R/O/AI.
 
 **Files:**
-- Create: `src/app/resumes/new/page.tsx`
-- Create: `src/app/resumes/[id]/page.tsx`
-- Create: `src/app/resumes/[id]/edit/page.tsx`
-- Create: `src/app/resumes/[id]/fork/page.tsx`
+- Create: `src/app/(app)/profile/page.tsx`
+- Create: `src/app/(app)/profile/actions.ts`
 
 **Interfaces:**
-- Consumes: `getCurrentUserId`, `getResumeVersionWithContent` (`src/lib/resumes/queries.ts`), `listObjectsForUser` (`src/lib/objects/queries.ts`), `createResumeAction`/`editResumeAction`/`forkResumeAction` (`src/app/resumes/actions.ts`)
-- Produces: working `/resumes/new`, `/resumes/[id]`, `/resumes/[id]/edit`, `/resumes/[id]/fork` pages. `new`, `edit`, and `fork` are the same form shape (name + object checkboxes) — `new` starts empty, `edit`/`fork` read-and-pre-fill without writing, and every one of them writes exactly once, on submit.
+- Consumes: `getCurrentUserId`, `getProfile`/`upsertProfile` (`src/lib/profile.ts`), `signOut` (`next-auth/react`)
+- Produces: working `/profile` page — view/edit the live profile fields, plus log out.
 
-- [ ] **Step 1: Write the create page**
+- [x] **Step 1: Write the action**
 
-```tsx
-// src/app/resumes/new/page.tsx
+```ts
+// src/app/(app)/profile/actions.ts
+'use server';
+
 import { getCurrentUserId } from '@/lib/session';
-import { listObjectsForUser } from '@/lib/objects/queries';
-import { createResumeAction } from '../actions';
+import { upsertProfile } from '@/lib/profile';
 import { redirect } from 'next/navigation';
 
-export default async function NewResumePage() {
+export async function updateProfileAction(formData: FormData) {
   const userId = await getCurrentUserId();
-  const objects = await listObjectsForUser(userId);
-
-  return (
-    <div>
-      <h1>New resume</h1>
-      <form
-        action={async (formData) => {
-          'use server';
-          const selectedIds = formData.getAll('objectVersionId') as string[];
-          const bySelected = objects.filter((o) => selectedIds.includes(o.id));
-          // One section per type — a resume can't have two sections of the same type.
-          const byType = new Map<string, typeof bySelected>();
-          for (const o of bySelected) {
-            const group = byType.get(o.type) ?? [];
-            group.push(o);
-            byType.set(o.type, group);
-          }
-          const sections = Array.from(byType.entries()).map(([sectionType, items], sectionIndex) => ({
-            sectionType,
-            order: sectionIndex,
-            items: items.map((o, itemIndex) => ({ objectVersionId: o.id, order: itemIndex })),
-          }));
-          const { id } = await createResumeAction(String(formData.get('name')), sections);
-          redirect(`/resumes/${id}`);
-        }}
-      >
-        <input name="name" placeholder="Resume name" required />
-        <fieldset>
-          <legend>Include objects (latest version)</legend>
-          {objects.map((o) => (
-            <label key={o.rootVersionId}>
-              <input type="checkbox" name="objectVersionId" value={o.id} />
-              [{o.type}] {o.body.slice(0, 60)}
-            </label>
-          ))}
-        </fieldset>
-        <button type="submit">Create</button>
-      </form>
-    </div>
-  );
+  await upsertProfile(userId, {
+    fullName: String(formData.get('fullName')),
+    email: String(formData.get('email')),
+    phone: String(formData.get('phone')),
+    location: String(formData.get('location')),
+    links: { linkedin: String(formData.get('linkedin') ?? '') },
+  });
+  redirect('/profile');
 }
 ```
 
-- [ ] **Step 2: Write the view page**
+- [x] **Step 2: Write the page**
 
 ```tsx
-// src/app/resumes/[id]/page.tsx
+// src/app/(app)/profile/page.tsx
 import { getCurrentUserId } from '@/lib/session';
-import { getResumeVersionWithContent } from '@/lib/resumes/queries';
-import Link from 'next/link';
+import { getProfile } from '@/lib/profile';
+import { updateProfileAction } from './actions';
+import { LogoutButton } from './LogoutButton';
 
-export default async function ViewResumePage({ params }: { params: { id: string } }) {
+export default async function ProfilePage() {
   const userId = await getCurrentUserId();
-  const resume = await getResumeVersionWithContent(userId, params.id);
+  const profile = await getProfile(userId);
 
   return (
     <div>
-      <h1>{resume.name}</h1>
-      {resume.sections.map((section) => (
-        <div key={section.id}>
-          <h2>{section.sectionType}</h2>
-          <ul>
-            {section.items.map((item) => (
-              <li key={item.id}>{item.objectVersion.body}</li>
-            ))}
-          </ul>
-        </div>
-      ))}
-
-      <Link href={`/resumes/${resume.id}/edit`}>Edit</Link>
-      <Link href={`/resumes/${resume.id}/fork`}>Fork</Link>
+      <h1>Profile</h1>
+      <form action={updateProfileAction}>
+        <input name="fullName" defaultValue={profile?.fullName} placeholder="Full name" required />
+        <input name="email" type="email" defaultValue={profile?.email} placeholder="Email" required />
+        <input name="phone" defaultValue={profile?.phone} placeholder="Phone" required />
+        <input name="location" defaultValue={profile?.location} placeholder="Location" required />
+        <input
+          name="linkedin"
+          defaultValue={(profile?.links as any)?.linkedin ?? ''}
+          placeholder="LinkedIn URL"
+        />
+        <button type="submit">Save</button>
+      </form>
+      <LogoutButton />
     </div>
   );
 }
 ```
-
-- [ ] **Step 3: Write the edit page**
 
 ```tsx
-// src/app/resumes/[id]/edit/page.tsx
-import { getCurrentUserId } from '@/lib/session';
-import { getResumeVersionWithContent } from '@/lib/resumes/queries';
-import { listObjectsForUser } from '@/lib/objects/queries';
-import { editResumeAction } from '../../actions';
-import { redirect } from 'next/navigation';
+// src/app/(app)/profile/LogoutButton.tsx
+'use client';
 
-export default async function EditResumePage({ params }: { params: { id: string } }) {
-  const userId = await getCurrentUserId();
-  const resume = await getResumeVersionWithContent(userId, params.id);
-  const objects = await listObjectsForUser(userId);
+import { signOut } from 'next-auth/react';
 
+export function LogoutButton() {
   return (
-    <div>
-      <h1>Edit {resume.name}</h1>
-      <form
-        action={async (formData) => {
-          'use server';
-          const selectedIds = formData.getAll('objectVersionId') as string[];
-          const bySelected = objects.filter((o) => selectedIds.includes(o.id));
-          // One section per type — a resume can't have two sections of the same type.
-          const byType = new Map<string, typeof bySelected>();
-          for (const o of bySelected) {
-            const group = byType.get(o.type) ?? [];
-            group.push(o);
-            byType.set(o.type, group);
-          }
-          const sections = Array.from(byType.entries()).map(([sectionType, items], sectionIndex) => ({
-            sectionType,
-            order: sectionIndex,
-            items: items.map((o, itemIndex) => ({ objectVersionId: o.id, order: itemIndex })),
-          }));
-          const { id } = await editResumeAction(resume.id, String(formData.get('name')), sections);
-          redirect(`/resumes/${id}`);
-        }}
-      >
-        <input name="name" defaultValue={resume.name} required />
-        <fieldset>
-          <legend>Include objects (latest version)</legend>
-          {objects.map((o) => (
-            <label key={o.rootVersionId}>
-              <input
-                type="checkbox"
-                name="objectVersionId"
-                value={o.id}
-                defaultChecked={resume.sections.some((s) =>
-                  s.items.some((it) => it.objectVersionId === o.id)
-                )}
-              />
-              [{o.type}] {o.body.slice(0, 60)}
-            </label>
-          ))}
-        </fieldset>
-        <button type="submit">Save new version</button>
-      </form>
-    </div>
+    <button type="button" onClick={() => signOut({ redirectTo: '/login' })}>
+      Log out
+    </button>
   );
 }
 ```
 
-- [ ] **Step 4: Write the fork page**
+`signOut` needs a client component since it's from `next-auth/react`, hence the small split-out button.
 
-Same shape as the edit page — reads and pre-fills from the *source* version, but writes nothing until submit, and calls `forkResumeAction` (not `editResumeAction`) with the source's id as `sourceVersionId`.
+- [ ] **Step 3: Manually verify**
 
-```tsx
-// src/app/resumes/[id]/fork/page.tsx
-import { getCurrentUserId } from '@/lib/session';
-import { getResumeVersionWithContent } from '@/lib/resumes/queries';
-import { listObjectsForUser } from '@/lib/objects/queries';
-import { forkResumeAction } from '../../actions';
-import { redirect } from 'next/navigation';
+Run: `npm run dev`, click the sidebar avatar, confirm it opens `/profile`, fill in and save the form, confirm the values persist on reload, and confirm "Log out" returns to `/login`.
 
-export default async function ForkResumePage({ params }: { params: { id: string } }) {
-  const userId = await getCurrentUserId();
-  const source = await getResumeVersionWithContent(userId, params.id);
-  const objects = await listObjectsForUser(userId);
-
-  return (
-    <div>
-      <h1>Fork {source.name}</h1>
-      <form
-        action={async (formData) => {
-          'use server';
-          const selectedIds = formData.getAll('objectVersionId') as string[];
-          const bySelected = objects.filter((o) => selectedIds.includes(o.id));
-          // One section per type — a resume can't have two sections of the same type.
-          const byType = new Map<string, typeof bySelected>();
-          for (const o of bySelected) {
-            const group = byType.get(o.type) ?? [];
-            group.push(o);
-            byType.set(o.type, group);
-          }
-          const sections = Array.from(byType.entries()).map(([sectionType, items], sectionIndex) => ({
-            sectionType,
-            order: sectionIndex,
-            items: items.map((o, itemIndex) => ({ objectVersionId: o.id, order: itemIndex })),
-          }));
-          const { id } = await forkResumeAction(source.id, String(formData.get('name')), sections);
-          redirect(`/resumes/${id}`);
-        }}
-      >
-        <input name="name" defaultValue={`Fork of ${source.name}`} required />
-        <fieldset>
-          <legend>Include objects (latest version)</legend>
-          {objects.map((o) => (
-            <label key={o.rootVersionId}>
-              <input
-                type="checkbox"
-                name="objectVersionId"
-                value={o.id}
-                defaultChecked={source.sections.some((s) =>
-                  s.items.some((it) => it.objectVersionId === o.id)
-                )}
-              />
-              [{o.type}] {o.body.slice(0, 60)}
-            </label>
-          ))}
-        </fieldset>
-        <button type="submit">Save fork</button>
-      </form>
-    </div>
-  );
-}
-```
-
-- [ ] **Step 5: Manually verify**
-
-Run: `npm run dev`. Create two objects at `/objects`, create a resume at `/resumes/new` with both objects included, view it, fork it, and confirm the fork page is pre-filled with the same objects checked; submit without changing anything and confirm the new fork's view page shows the same content and is a separate resume tree from the original.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: add resume create, view, edit, and fork pages"
+git commit -m "feat: add profile page with edit form and logout"
 ```
 
 ---
 
-### Task 17: Dashboards UI
+### Task 18: Object Dashboard UI (browse, create, edit)
+
+No separate object list page — the old standalone `/objects` page is dropped. The Object Dashboard already shows every version grouped by object with usage info (Task 10); it just needs a type/tag filter and a "+ New Object" entry point to also cover browsing and creation. Editing happens via the same modal used to pick objects for a resume section (Task 19 reuses it), following the Figma 3b design: a "recent objects" picker with a "+" to see every version of one object, plus a "create new" form — direct-edit mode skips the picker and jumps straight to that object's full version list.
 
 **Files:**
-- Create: `src/app/dashboard/resumes/page.tsx`
-- Create: `src/app/dashboard/objects/page.tsx`
+- Create: `src/components/ObjectPickerModal.tsx`
+- Create: `src/app/(app)/dashboard/objects/page.tsx`
 
 **Interfaces:**
-- Consumes: `getCurrentUserId`, `getResumeForest` (`src/lib/resumes/queries.ts`), `getObjectDashboard` (`src/lib/objects/dashboard.ts`)
-- Produces: working `/dashboard/resumes` and `/dashboard/objects` pages.
+- Consumes: `getCurrentUserId`, `getObjectDashboard` (`src/lib/objects/dashboard.ts`), `listTagsForUser` (`src/lib/objects/queries.ts`), `createObjectAction`/`editObjectAction`/`listLatestObjectsAction`/`getObjectHistoryAction` (`src/app/objects/actions.ts`)
+- Produces: `ObjectPickerModal` (shared, reused by Task 19) and working `/dashboard/objects` page (`?type=` and `?tags=` filter client-side, same reasoning as the old list page — the whole set is already fetched).
 
-- [ ] **Step 1: Write the Resume Dashboard page**
+- [ ] **Step 1: Write the shared picker/editor modal**
 
 ```tsx
-// src/app/dashboard/resumes/page.tsx
-import { getCurrentUserId } from '@/lib/session';
-import { getResumeForest } from '@/lib/resumes/queries';
-import Link from 'next/link';
+// src/components/ObjectPickerModal.tsx
+'use client';
 
-export default async function ResumeDashboardPage() {
-  const userId = await getCurrentUserId();
-  const forest = await getResumeForest(userId);
+import { useRef, useState } from 'react';
+import { createObjectAction, editObjectAction, getObjectHistoryAction } from '@/app/objects/actions';
+import type { ObjectType } from '@/lib/objects/schemas';
+
+type ObjectSummary = { id: string; rootVersionId: string; body: string; versionNumber: number };
+
+type Props = {
+  type: ObjectType;
+  recentObjects?: ObjectSummary[];
+  onPick: (objectVersionId: string) => void;
+  triggerLabel?: string;
+  editingRootVersionId?: string;
+};
+
+export function ObjectPickerModal({
+  type,
+  recentObjects = [],
+  onPick,
+  triggerLabel = '+ Object',
+  editingRootVersionId,
+}: Props) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [view, setView] = useState<'recent' | 'allVersions'>('recent');
+  const [allVersions, setAllVersions] = useState<ObjectSummary[]>([]);
+
+  async function openAllVersions(rootVersionId: string) {
+    setAllVersions(await getObjectHistoryAction(rootVersionId));
+    setView('allVersions');
+  }
+
+  function open() {
+    if (editingRootVersionId) {
+      openAllVersions(editingRootVersionId);
+    } else {
+      setView('recent');
+    }
+    dialogRef.current?.showModal();
+  }
+
+  function pick(id: string) {
+    onPick(id);
+    dialogRef.current?.close();
+  }
 
   return (
-    <div>
-      <h1>Resumes</h1>
-      <ul>
-        {forest.map((tree) => (
-          <li key={tree.rootVersionId}>
-            <Link href={`/resumes/${tree.headVersionId}`}>{tree.name}</Link>
-            {tree.forkedFromRootVersionId && (
-              <span>
-                {' '}
-                (forked from{' '}
-                {forest.find((t) => t.rootVersionId === tree.forkedFromRootVersionId)?.name})
-              </span>
+    <>
+      <button type="button" onClick={open}>
+        {triggerLabel}
+      </button>
+      <dialog ref={dialogRef}>
+        <button type="button" onClick={() => dialogRef.current?.close()}>
+          ✕
+        </button>
+
+        {view === 'recent' && (
+          <>
+            <h2>Add Object — {type}</h2>
+            <fieldset>
+              <legend>Recent objects</legend>
+              {recentObjects.map((o) => (
+                <span key={o.id}>
+                  <button type="button" onClick={() => pick(o.id)}>
+                    {o.body.slice(0, 20)}
+                  </button>
+                  <button type="button" onClick={() => openAllVersions(o.rootVersionId)} aria-label="See all versions">
+                    +
+                  </button>
+                </span>
+              ))}
+            </fieldset>
+            <fieldset>
+              <legend>or create new</legend>
+              <form
+                action={async (formData) => {
+                  const { id } = await createObjectAction(
+                    type,
+                    { category: String(formData.get('category') ?? '') },
+                    String(formData.get('body'))
+                  );
+                  pick(id);
+                }}
+              >
+                <input name="category" placeholder="Title / category" />
+                <textarea name="body" placeholder="Markdown content" required />
+                <button type="submit">Create</button>
+              </form>
+            </fieldset>
+          </>
+        )}
+
+        {view === 'allVersions' && (
+          <>
+            <h2>All versions</h2>
+            <ul>
+              {allVersions.map((v) => (
+                <li key={v.id}>
+                  <button type="button" onClick={() => pick(v.id)}>
+                    v{v.versionNumber}: {v.body.slice(0, 40)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <form
+              action={async (formData) => {
+                const latest = allVersions[allVersions.length - 1];
+                const { id } = await editObjectAction(
+                  latest.id,
+                  { category: String(formData.get('category') ?? '') },
+                  String(formData.get('body'))
+                );
+                pick(id);
+              }}
+            >
+              <textarea name="body" placeholder="Edit and save as a new version" required defaultValue={allVersions.at(-1)?.body} />
+              <button type="submit">Save new version</button>
+            </form>
+            {!editingRootVersionId && (
+              <button type="button" onClick={() => setView('recent')}>
+                ← Back
+              </button>
             )}
-          </li>
-        ))}
-      </ul>
-      <Link href="/resumes/new">+ New resume</Link>
-    </div>
+          </>
+        )}
+      </dialog>
+    </>
   );
 }
 ```
@@ -2389,25 +2414,77 @@ export default async function ResumeDashboardPage() {
 - [ ] **Step 2: Write the Object Dashboard page**
 
 ```tsx
-// src/app/dashboard/objects/page.tsx
+// src/app/(app)/dashboard/objects/page.tsx
 import { getCurrentUserId } from '@/lib/session';
 import { getObjectDashboard } from '@/lib/objects/dashboard';
+import { listTagsForUser } from '@/lib/objects/queries';
+import { ObjectPickerModal } from '@/components/ObjectPickerModal';
+import { redirect } from 'next/navigation';
 
-export default async function ObjectDashboardPage() {
+const TYPES = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY', 'PROJECT', 'CERTIFICATION', 'EXTRACURRICULAR'] as const;
+
+export default async function ObjectDashboardPage({
+  searchParams,
+}: {
+  searchParams: { type?: string; tags?: string };
+}) {
   const userId = await getCurrentUserId();
-  const dashboard = await getObjectDashboard(userId);
+  const [dashboard, allTags] = await Promise.all([getObjectDashboard(userId), listTagsForUser(userId)]);
+
+  const activeTags = searchParams.tags ? searchParams.tags.split(',').map((t) => t.trim()) : [];
+  const filtered = dashboard.filter((entry) => {
+    if (searchParams.type && entry.type !== searchParams.type) return false;
+    if (activeTags.length === 0) return true;
+    return entry.versions.some((v) => v.tags.some((t) => activeTags.includes(t)));
+  });
 
   return (
     <div>
       <h1>Objects</h1>
-      {dashboard.map((entry) => (
+
+      <form>
+        <select name="type" defaultValue={searchParams.type ?? ''}>
+          <option value="">All types</option>
+          {TYPES.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+        <input name="tags" defaultValue={searchParams.tags ?? ''} placeholder="Tags, comma-separated" list="known-tags" />
+        <datalist id="known-tags">
+          {allTags.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
+        <button type="submit">Filter</button>
+      </form>
+
+      {TYPES.map((type) => (
+        <ObjectPickerModal
+          key={type}
+          type={type}
+          onPick={() => redirect(`/dashboard/objects`)}
+          triggerLabel={`+ New ${type}`}
+        />
+      ))}
+
+      {filtered.map((entry) => (
         <div key={entry.rootVersionId}>
           <h2>{entry.type}</h2>
           <ul>
             {entry.versions.map((v) => (
               <li key={v.id}>
-                v{v.versionNumber}: {v.body.slice(0, 60)} — used in:{' '}
+                v{v.versionNumber}: {v.body.slice(0, 60)}
+                {v.tags.length > 0 && <span> — tags: {v.tags.join(', ')}</span>}
+                {' — used in: '}
                 {v.usedInResumeNames.length > 0 ? v.usedInResumeNames.join(', ') : 'none'}
+                <ObjectPickerModal
+                  type={entry.type as any}
+                  editingRootVersionId={entry.rootVersionId}
+                  onPick={() => redirect(`/dashboard/objects`)}
+                  triggerLabel="Edit"
+                />
               </li>
             ))}
           </ul>
@@ -2418,20 +2495,383 @@ export default async function ObjectDashboardPage() {
 }
 ```
 
+`onPick` calling `redirect()` from a Server Action closure is a placeholder for "refresh the page's data after a save" — worth revisiting during implementation (likely `router.refresh()` from a small client wrapper instead, since `redirect()` inside a nested server action passed to a client component is awkward). Flagged here rather than treated as settled.
+
 - [ ] **Step 3: Manually verify**
 
-Run: `npm run dev`, visit `/dashboard/resumes` and confirm the forked resume shows a "forked from" note; visit `/dashboard/objects` and confirm an object used in a resume shows that resume's name under "used in", and its older versions show "none".
+Run: `npm run dev`, visit `/dashboard/objects`, create a new Skills object via "+ New SKILLS", confirm it appears with `usedInResumeNames: []`, then use "Edit" on it to save a new version and confirm both versions now show.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: add resume and object dashboards"
+git commit -m "feat: add object dashboard with create/edit modal, drop standalone object list page"
 ```
 
 ---
 
-### Task 18: AI context builder
+### Task 19: Resume UI (create, view, edit, fork)
+
+Single vertical form (Figma 3a): name field, sections stack downward, each section's objects are picked via `ObjectPickerModal` (Figma 3b) rather than inline checkboxes. Because objects are now added one at a time through a modal instead of a bulk checkbox list, the form needs client-side state — it's a client component fed by server-fetched initial data, not a pure server-rendered form. Edit/Fork reuse the same form, pre-filled, with a small header showing which version they're based on. The Resume Screen gets three tabs: **Resume** (content), **History** (real — every version in the tree), **Chat** (stub — a future per-resume-scoped Q&A, disabled for Spike 1). Diff is dropped from the tab bar entirely per the same decision.
+
+**Files:**
+- Create: `src/app/(app)/resumes/ResumeForm.tsx` (shared client form for new/edit/fork)
+- Create: `src/app/(app)/resumes/new/page.tsx`
+- Create: `src/app/(app)/resumes/[id]/page.tsx`
+- Create: `src/app/(app)/resumes/[id]/edit/page.tsx`
+- Create: `src/app/(app)/resumes/[id]/fork/page.tsx`
+- Create: `src/app/(app)/resumes/[id]/HistoryTab.tsx`
+
+**Interfaces:**
+- Consumes: `getCurrentUserId`, `getResumeVersionWithContent`, `getResumeTreeHistory` (`src/lib/resumes/queries.ts`), `listLatestObjectsAction` (`src/app/objects/actions.ts`), `createResumeAction`/`editResumeAction`/`forkResumeAction` (`src/app/resumes/actions.ts`), `ObjectPickerModal` (Task 18)
+- Produces: working `/resumes/new`, `/resumes/[id]`, `/resumes/[id]/edit`, `/resumes/[id]/fork` pages, each writing exactly once on submit.
+
+- [ ] **Step 1: Write the shared form**
+
+```tsx
+// src/app/(app)/resumes/ResumeForm.tsx
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createResumeAction, editResumeAction, forkResumeAction } from './actions';
+import { ObjectPickerModal } from '@/components/ObjectPickerModal';
+import { listLatestObjectsAction } from '@/app/objects/actions';
+import type { ObjectType } from '@/lib/objects/schemas';
+
+const TYPES: ObjectType[] = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY', 'PROJECT', 'CERTIFICATION', 'EXTRACURRICULAR'];
+
+type Item = { objectVersionId: string; body: string };
+type Props = {
+  mode: 'create' | 'edit' | 'fork';
+  sourceId?: string;
+  initialName?: string;
+  initialSections?: Array<{ sectionType: ObjectType; items: Item[] }>;
+  versionInfo?: string; // e.g. "v3" or "forked from Senior PM Resume"
+};
+
+export function ResumeForm({ mode, sourceId, initialName = '', initialSections = [], versionInfo }: Props) {
+  const router = useRouter();
+  const [name, setName] = useState(initialName);
+  const [sections, setSections] = useState(initialSections);
+  const [recent, setRecent] = useState<Record<string, Item[]>>({});
+
+  function addSectionType(type: ObjectType) {
+    if (sections.some((s) => s.sectionType === type)) return;
+    setSections([...sections, { sectionType: type, items: [] }]);
+  }
+
+  async function openPickerFor(type: ObjectType) {
+    if (!recent[type]) {
+      const objs = await listLatestObjectsAction(type);
+      setRecent((r) => ({ ...r, [type]: objs.map((o) => ({ objectVersionId: o.id, body: o.body })) }));
+    }
+  }
+
+  function addItem(type: ObjectType, item: Item) {
+    setSections((prev) =>
+      prev.map((s) => (s.sectionType === type ? { ...s, items: [...s.items, item] } : s))
+    );
+  }
+
+  async function handleSubmit() {
+    const payload = sections.map((s, i) => ({
+      sectionType: s.sectionType,
+      order: i,
+      items: s.items.map((it, j) => ({ objectVersionId: it.objectVersionId, order: j })),
+    }));
+
+    const result =
+      mode === 'create'
+        ? await createResumeAction(name, payload)
+        : mode === 'edit'
+          ? await editResumeAction(sourceId!, name, payload)
+          : await forkResumeAction(sourceId!, name, payload);
+
+    router.push(`/resumes/${result.id}`);
+  }
+
+  return (
+    <div>
+      {versionInfo && <p>{versionInfo}</p>}
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Resume name" required />
+
+      {sections.map((section) => (
+        <fieldset key={section.sectionType}>
+          <legend>{section.sectionType}</legend>
+          <ul>
+            {section.items.map((item) => (
+              <li key={item.objectVersionId}>{item.body.slice(0, 60)}</li>
+            ))}
+          </ul>
+          <ObjectPickerModal
+            type={section.sectionType}
+            recentObjects={(recent[section.sectionType] ?? []).map((r) => ({
+              id: r.objectVersionId,
+              rootVersionId: r.objectVersionId,
+              body: r.body,
+              versionNumber: 0,
+            }))}
+            onPick={(objectVersionId) => {
+              const picked =
+                recent[section.sectionType]?.find((r) => r.objectVersionId === objectVersionId) ?? {
+                  objectVersionId,
+                  body: '(new)',
+                };
+              addItem(section.sectionType, picked);
+            }}
+          />
+        </fieldset>
+      ))}
+
+      <select onChange={(e) => e.target.value && addSectionType(e.target.value as ObjectType)} value="">
+        <option value="">+ Add Section</option>
+        {TYPES.filter((t) => !sections.some((s) => s.sectionType === t)).map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </select>
+
+      <button type="button" onClick={handleSubmit}>
+        {mode === 'create' ? 'Done' : mode === 'edit' ? 'Save new version' : 'Save fork'}
+      </button>
+    </div>
+  );
+}
+```
+
+`openPickerFor` (lazy-loading recent objects per section type on first open) is called from each section's `ObjectPickerModal` trigger in the real implementation — left as a TODO wire-up here since the exact prop for "on open" needs a small addition to `ObjectPickerModal` (an `onOpen` callback) not shown in Task 18's sketch; flagging it now rather than pretending it's already wired.
+
+- [ ] **Step 2: Write the create/edit/fork pages**
+
+```tsx
+// src/app/(app)/resumes/new/page.tsx
+import { getCurrentUserId } from '@/lib/session';
+import { ResumeForm } from '../ResumeForm';
+
+export default async function NewResumePage() {
+  await getCurrentUserId();
+  return <ResumeForm mode="create" />;
+}
+```
+
+```tsx
+// src/app/(app)/resumes/[id]/edit/page.tsx
+import { getCurrentUserId } from '@/lib/session';
+import { getResumeVersionWithContent } from '@/lib/resumes/queries';
+import { ResumeForm } from '../../ResumeForm';
+
+export default async function EditResumePage({ params }: { params: { id: string } }) {
+  const userId = await getCurrentUserId();
+  const resume = await getResumeVersionWithContent(userId, params.id);
+
+  return (
+    <ResumeForm
+      mode="edit"
+      sourceId={resume.id}
+      initialName={resume.name}
+      initialSections={resume.sections.map((s) => ({
+        sectionType: s.sectionType as any,
+        items: s.items.map((it) => ({ objectVersionId: it.objectVersionId, body: it.objectVersion.body })),
+      }))}
+      versionInfo={`Editing from v${resume.id.slice(0, 8)}`}
+    />
+  );
+}
+```
+
+```tsx
+// src/app/(app)/resumes/[id]/fork/page.tsx
+import { getCurrentUserId } from '@/lib/session';
+import { getResumeVersionWithContent } from '@/lib/resumes/queries';
+import { ResumeForm } from '../../ResumeForm';
+
+export default async function ForkResumePage({ params }: { params: { id: string } }) {
+  const userId = await getCurrentUserId();
+  const source = await getResumeVersionWithContent(userId, params.id);
+
+  return (
+    <ResumeForm
+      mode="fork"
+      sourceId={source.id}
+      initialName={`Fork of ${source.name}`}
+      initialSections={source.sections.map((s) => ({
+        sectionType: s.sectionType as any,
+        items: s.items.map((it) => ({ objectVersionId: it.objectVersionId, body: it.objectVersion.body })),
+      }))}
+      versionInfo={`Forked from ${source.name}`}
+    />
+  );
+}
+```
+
+`versionInfo`'s "v{id.slice(0,8)}" placeholder is a stand-in — `ResumeVersion` has no `versionNumber` field (unlike objects; see the recency-based-head design decision), so there's no clean short label to show here yet. Worth deciding during implementation whether to show `createdAt` instead, or nothing.
+
+- [ ] **Step 3: Write the view page with Resume / History / Chat tabs**
+
+```tsx
+// src/app/(app)/resumes/[id]/page.tsx
+import { getCurrentUserId } from '@/lib/session';
+import { getResumeVersionWithContent } from '@/lib/resumes/queries';
+import { HistoryTab } from './HistoryTab';
+import Link from 'next/link';
+
+export default async function ViewResumePage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { tab?: string };
+}) {
+  const userId = await getCurrentUserId();
+  const resume = await getResumeVersionWithContent(userId, params.id);
+  const tab = searchParams.tab ?? 'resume';
+
+  return (
+    <div>
+      <h1>{resume.name}</h1>
+      <Link href={`/resumes/${resume.id}/edit`}>Edit</Link>
+      <Link href={`/resumes/${resume.id}/fork`}>Fork</Link>
+
+      <nav>
+        <Link href={`/resumes/${resume.id}?tab=resume`}>Resume</Link>
+        <Link href={`/resumes/${resume.id}?tab=history`}>History</Link>
+        <span title="Coming later — per-resume AI chat, not in Spike 1">Chat</span>
+      </nav>
+
+      {tab === 'resume' &&
+        resume.sections.map((section) => (
+          <div key={section.id}>
+            <h2>{section.sectionType}</h2>
+            <ul>
+              {section.items.map((item) => (
+                <li key={item.id}>{item.objectVersion.body}</li>
+              ))}
+            </ul>
+          </div>
+        ))}
+
+      {tab === 'history' && <HistoryTab userId={userId} rootVersionId={resume.rootVersionId} currentId={resume.id} />}
+    </div>
+  );
+}
+```
+
+```tsx
+// src/app/(app)/resumes/[id]/HistoryTab.tsx
+import { getResumeTreeHistory } from '@/lib/resumes/queries';
+import Link from 'next/link';
+
+export async function HistoryTab({
+  userId,
+  rootVersionId,
+  currentId,
+}: {
+  userId: string;
+  rootVersionId: string;
+  currentId: string;
+}) {
+  const history = await getResumeTreeHistory(userId, rootVersionId);
+
+  return (
+    <ul>
+      {history.map((v, i) => (
+        <li key={v.id}>
+          <Link href={`/resumes/${v.id}`}>
+            Version {i + 1} {v.id === currentId && '(current)'} — {v.name}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+The "Chat" tab is a disabled label, not a link — nothing behind it in Spike 1.
+
+- [ ] **Step 4: Manually verify**
+
+Run: `npm run dev`. Create a resume with objects added via the picker modal, view it, check the History tab shows one entry, edit it, confirm History now shows two entries and the edited version is the current one, fork it, and confirm the fork's header shows "Forked from...".
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add resume create/view/edit/fork pages with picker-based sections and history tab"
+```
+
+---
+
+### Task 20: Resume Dashboard UI
+
+Flat, indented rows (Figma's "1b" — the only surviving variant; the nested-cards mockup was dropped in the newer Figma file).
+
+**Files:**
+- Create: `src/app/(app)/dashboard/resumes/page.tsx`
+
+**Interfaces:**
+- Consumes: `getCurrentUserId`, `getResumeForest` (`src/lib/resumes/queries.ts`)
+- Produces: working `/dashboard/resumes` page.
+
+- [ ] **Step 1: Write the page**
+
+```tsx
+// src/app/(app)/dashboard/resumes/page.tsx
+import { getCurrentUserId } from '@/lib/session';
+import { getResumeForest } from '@/lib/resumes/queries';
+import Link from 'next/link';
+
+export default async function ResumeDashboardPage() {
+  const userId = await getCurrentUserId();
+  const forest = await getResumeForest(userId);
+
+  // Flat rows, indented under whichever tree they were forked from — matches
+  // the "flat rows · indent + ↳ marks a child" wireframe note.
+  const roots = forest.filter((t) => !t.forkedFromRootVersionId);
+  const childrenOf = (rootVersionId: string) => forest.filter((t) => t.forkedFromRootVersionId === rootVersionId);
+
+  return (
+    <div>
+      <h1>My Resumes</h1>
+      <ul>
+        {roots.map((tree) => (
+          <li key={tree.rootVersionId}>
+            <Link href={`/resumes/${tree.headVersionId}`}>{tree.name}</Link>
+            <ul>
+              {childrenOf(tree.rootVersionId).map((child) => (
+                <li key={child.rootVersionId}>
+                  ↳ <Link href={`/resumes/${child.headVersionId}`}>{child.name}</Link> (fork)
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      <Link href="/resumes/new">+ New resume</Link>
+    </div>
+  );
+}
+```
+
+Only one level of fork nesting is shown (a fork-of-a-fork would list as a top-level "orphan" here, since `roots` only catches trees with no fork origin at all) — flagging this as a real limitation worth a second pass rather than silently claiming full nesting.
+
+- [ ] **Step 2: Manually verify**
+
+Run: `npm run dev`, visit `/dashboard/resumes`, confirm a forked resume shows indented under its source with a "(fork)" label.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "feat: add resume dashboard with flat indented rows"
+```
+
+---
+
+### Task 21: AI context builder
+
+Unchanged from the original plan — pure function, no UI dependency, just renumbered.
 
 **Files:**
 - Create: `src/lib/ai/context.ts`
@@ -2525,7 +2965,9 @@ git commit -m "feat: add career context builder for AI prompts"
 
 ---
 
-### Task 19: Q&A streaming route handler
+### Task 22: Q&A streaming route handler
+
+Unchanged from the original plan — just renumbered.
 
 **Files:**
 - Create: `src/app/api/qna/route.ts`
@@ -2634,48 +3076,59 @@ git commit -m "feat: add streaming Q&A route handler"
 
 ---
 
-### Task 20: Q&A chat UI
+### Task 23: Q&A chat UI
+
+ChatGPT/Claude-style chat page, living under `(app)/` so it gets the sidebar (the "AI" link points here).
 
 **Files:**
-- Create: `src/app/qna/page.tsx`
+- Create: `src/app/(app)/qna/page.tsx`
 
 **Interfaces:**
-- Consumes: `useChat` from `ai/react`, `/api/qna` (Task 19)
+- Consumes: `useChat` from `ai/react`, `/api/qna` (Task 22)
 - Produces: working `/qna` chat page.
 
 - [ ] **Step 1: Write the chat page**
 
 ```tsx
-// src/app/qna/page.tsx
+// src/app/(app)/qna/page.tsx
 'use client';
 
 import { useChat } from 'ai/react';
 
 export default function QnaPage() {
-  const { messages, input, handleInputChange, handleSubmit } = useChat({ api: '/api/qna' });
+  const { messages, input, handleInputChange, handleSubmit, status } = useChat({ api: '/api/qna' });
 
   return (
-    <div>
-      <h1>Career Q&A</h1>
-      <ul>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {messages.length === 0 && <p>Ask anything about your career, based on everything in your objects.</p>}
         {messages.map((m) => (
-          <li key={m.id}>
-            <strong>{m.role}:</strong> {m.content}
-          </li>
+          <div key={m.id} style={{ textAlign: m.role === 'user' ? 'right' : 'left' }}>
+            <div style={{ display: 'inline-block', borderRadius: 12, padding: '8px 12px' }}>{m.content}</div>
+          </div>
         ))}
-      </ul>
-      <form onSubmit={handleSubmit}>
-        <input value={input} onChange={handleInputChange} placeholder="Ask a career question..." />
-        <button type="submit">Send</button>
+      </div>
+      <form onSubmit={handleSubmit} style={{ display: 'flex' }}>
+        <input
+          value={input}
+          onChange={handleInputChange}
+          placeholder="Ask a career question…"
+          style={{ flex: 1 }}
+        />
+        <button type="submit" disabled={status === 'streaming'}>
+          Send
+        </button>
       </form>
     </div>
   );
 }
 ```
 
+Message bubbles are role-aligned (right for user, left for assistant) with no further styling library — matches the rest of the app's plain-CSS approach, just enough structure to read as a chat UI rather than a bare list.
+
 - [ ] **Step 2: Manually verify**
 
-Set a real `OPENAI_API_KEY` in `.env`, run `npm run dev`, log in, add a couple of objects at `/objects`, visit `/qna`, ask a question, and confirm a streamed response references the objects you added.
+Set a real `OPENAI_API_KEY` in `.env`, run `npm run dev`, log in, add a couple of objects at `/dashboard/objects`, visit `/qna` (via the sidebar "AI" link), ask a question, and confirm a streamed response references the objects you added.
 
 - [ ] **Step 3: Commit**
 
@@ -2686,11 +3139,11 @@ git commit -m "feat: add Career Q&A chat page"
 
 ---
 
-## Self-Review Notes
+## Self-Review Notes (UI phase, updated 2026-08-23)
 
-- **Spec coverage:** create/edit/fork resume (Tasks 8, 13, 16), object versioning (Tasks 4, 12, 15), resume + object history views (Tasks 9, 15), Resume Dashboard + Object Dashboard (Tasks 9, 10, 17), Profile (Task 11), Career Q&A with full-context injection and no memory (Tasks 18–20), data-isolation ownership checks (every `versioning.ts`/`queries.ts`/`actions.ts` function), immutable inserts only (no `update` calls anywhere in the versioning modules), recency-based "latest version" tracking for both objects and resumes — edits may start from any existing version, not only the head (Task 4's `editObjectVersion`, Task 8's `editResume`/`isHeadVersion`), per-version freeform tags with filtering and autocomplete (Tasks 2, 4, 5, 10, 12, 15). JD-based optimization is intentionally deferred to a later spike, per your scoping decision.
-- **Placeholder scan:** no TBD/TODO markers; every step has runnable code.
-- **Type consistency:** `SectionInput`/section shape (`sectionType`, `order`, `items: [{ objectVersionId, order }]`) is identical across Task 8 (`createResumeFromScratch`/`editResume`/`forkResume`), Task 13 (`createResumeAction`/`editResumeAction`/`forkResumeAction`), and Task 16 (new/edit/fork pages) — checked. `tags: string[]` (default `[]`) signature is consistent across Task 4 (`createObjectVersion`/`editObjectVersion`), Task 12 (`createObjectAction`/`editObjectAction`), and Task 15 (UI forms, via the shared `parseTags` helper) — checked.
-- **`resume_version_item` → `resume_version_section` schema change:** items reference `resumeVersionId` directly (not `sectionId`); `resume_version_section` is `UNIQUE(resumeVersionId, sectionType)`, and item-to-section matching happens by `objectVersion.type` at read time in Task 9's `getResumeVersionWithContent`, not via a stored FK. Propagated through the Prisma schema, Task 8 (`editResume`/`forkResume`), Task 9 (`getResumeVersionWithContent`), Task 10 (`getObjectDashboard`), and Task 16's edit-page submit handler, which now groups selected objects by `type` into one section instead of one section per object — required by the new `UNIQUE` constraint.
-- **Ownership-check test coverage:** `editResume`/`forkResume` (Task 8) and `editResumeAction`/`forkResumeAction` (Task 13) implemented the `ownerUserId` check but had no test exercising it — only `editObjectVersion` (Task 4) did. Added a "rejects ... owned by another user" test for each, matching Task 4's existing pattern.
-- **Single-write Create/Fork:** `createResumeFromScratch` and `forkResume` no longer write eagerly and then get edited again — both now take a `sections` payload and write exactly once, matching `editResume`'s existing shape. `/resumes/new` and the new `/resumes/[id]/fork` pages are full pre-fillable forms (fork reads the source and pre-fills without writing), not a name-only stub followed by a second edit round trip. Propagated through Task 8 (`createResumeFromScratch`/`forkResume` signatures + tests), Task 13 (`createResumeAction`/`forkResumeAction` signatures + tests), and Task 16 (`/resumes/new` rewritten as a full form; view page's Fork button is now a `Link` to `/resumes/[id]/fork` instead of a form that writes immediately).
+- **Sidebar as the shared shell:** every authenticated page moved under a `(app)` route group (Task 16) with one collapsible sidebar (R/O/AI links + profile avatar). `signup`/`login` (Task 15) deliberately stay outside it. Confirmed against Figma; the R/O/AI icons in the wireframe were explicitly mock placeholders — real routing was left to implementation.
+- **No separate object list page:** the original standalone `objects/page.tsx` list page is dropped entirely. Browsing, creating, and editing objects all happen on the Object Dashboard (Task 18) now, via a shared `ObjectPickerModal` reused in picker mode by Resume UI (Task 19) and direct-edit mode on the Dashboard itself.
+- **New data-layer additions (Task 14), needed once picking/editing moved into modals on client components:** `listLatestObjectsForUser` + `getResumeTreeHistory` (`lib/`), and `listLatestObjectsAction` + `getObjectHistoryAction` (`app/objects/actions.ts`, since client components can't call `lib/` functions directly). All follow existing established patterns — `listLatestObjectsForUser` mirrors `getLatestVersionsForUser`'s dedupe-by-recency shape; `getResumeTreeHistory` mirrors `getObjectHistory`'s shape.
+- **Resume Screen tabs:** Resume / History / Chat, not Resume / History / Diff. History is real (Task 14's `getResumeTreeHistory`). Diff was explicitly deferred past Spike 1; a new "Chat" idea (per-resume-scoped Q&A, distinct from the global Q&A which uses every object) replaced Diff's tab slot but is a disabled stub for Spike 1 — no function behind it.
+- **New Profile page (Task 17):** not in the original plan's file list, not in Figma — added because the sidebar avatar (Task 16) needs a destination, and `getProfile`/`upsertProfile` (Task 11) had no UI consumer at all until now.
+- **Known rough edges flagged, not resolved, in these sketches** (expected to get worked out during actual TDD implementation, same as every prior task in this plan): `ObjectPickerModal`'s "on open, lazy-load recent objects" wiring in `ResumeForm` (Task 19) needs a small prop addition not fully specified here; `onPick` handlers calling `redirect()`/needing a refresh after a modal save are placeholders for what's likely `router.refresh()` in practice; the Resume Dashboard's fork nesting (Task 20) only renders one level deep.
