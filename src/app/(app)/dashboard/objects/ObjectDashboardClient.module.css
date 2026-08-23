@@ -1,0 +1,51 @@
+.card {
+  border: 2px solid #1a1a1a;
+  border-radius: 5px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  max-width: 373px;
+}
+
+.caption {
+  color: #8a8578;
+  font-size: 13px;
+}
+
+.versionRow {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+}
+
+.chip,
+.chipActive {
+  border: 2px solid #1a1a1a;
+  border-radius: 5px;
+  padding: 10px;
+  width: 120px;
+  flex-shrink: 0;
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.chipActive {
+  background: #fff2a8;
+}
+
+.usedIn {
+  color: #8a8578;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.moreChip button {
+  border: 2px dashed #999;
+  border-radius: 5px;
+  width: 60px;
+  flex-shrink: 0;
+  align-self: stretch;
+  background: none;
+}

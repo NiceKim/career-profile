@@ -6,9 +6,9 @@ import { useState } from 'react';
 import styles from './Sidebar.module.css';
 
 const links = [
-  { href: '/dashboard/resumes', label: 'R', title: 'Resumes' },
-  { href: '/dashboard/objects', label: 'O', title: 'Objects' },
-  { href: '/qna', label: 'AI', title: 'Career Q&A' },
+  { href: '/dashboard/resumes', label: 'R', title: 'R' },
+  { href: '/dashboard/objects', label: 'O', title: 'O' },
+  { href: '/qna', label: 'AI', title: 'Q&A' },
 ];
 
 export function Sidebar({ initial }: { initial: string }) {
