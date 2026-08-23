@@ -1854,7 +1854,7 @@ git commit -m "feat: add resume server actions"
   - `getResumeTreeHistory(userId: string, rootVersionId: string): Promise<ResumeVersion[]>` — every version in one resume tree, oldest first. Powers the Resume Screen's History tab.
   - `listLatestObjectsAction(type?: ObjectType): Promise<ObjectVersion[]>` / `getObjectHistoryAction(rootVersionId: string): Promise<ObjectVersion[]>` — thin session-scoped Server Action wrappers, since the picker modal (Task 18) is a client component and can't call `lib/` functions directly.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```ts
 // src/lib/objects/queries.test.ts — add this test to the existing file
@@ -1907,12 +1907,12 @@ it('getObjectHistoryAction returns every version for the given root', async () =
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `npm test -- src/lib/objects/queries.test.ts src/lib/resumes/queries.test.ts src/app/objects/actions.test.ts`
 Expected: FAIL — new imports don't exist yet.
 
-- [ ] **Step 3: Write the implementations**
+- [x] **Step 3: Write the implementations**
 
 ```ts
 // src/lib/objects/queries.ts — add this export
@@ -1961,12 +1961,12 @@ export async function getObjectHistoryAction(rootVersionId: string) {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `npm test -- src/lib/objects/queries.test.ts src/lib/resumes/queries.test.ts src/app/objects/actions.test.ts`
-Expected: PASS (6 tests in `objects/queries.test.ts`, 5 in `resumes/queries.test.ts`, 6 in `objects/actions.test.ts`)
+Expected: PASS (5 tests in `objects/queries.test.ts`, 5 in `resumes/queries.test.ts`, 6 in `objects/actions.test.ts`)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A

@@ -3,7 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { resetDb } from '../../../test/db';
 import { createObjectVersion } from '../objects/versioning';
 import { createResumeFromScratch, editResume, forkResume } from './versioning';
-import { getLatestVersionsForUser, getResumeVersionWithContent, getResumeForest } from './queries';
+import { getLatestVersionsForUser, getResumeVersionWithContent, getResumeForest, getResumeTreeHistory } from './queries';
 
 describe('resume queries', () => {
   beforeEach(resetDb);
@@ -51,6 +51,15 @@ describe('resume queries', () => {
     const content = await getResumeVersionWithContent(user.id, resume.id);
 
     expect(content.sections[0].items[0].objectVersionId).toBe(skill.id);
+  });
+
+  it('returns every version in one tree, oldest first', async () => {
+    const user = await makeUser();
+    const v1 = await createResumeFromScratch(user.id, 'Original');
+    const v2 = await editResume(user.id, v1.id, 'v2', []);
+
+    const history = await getResumeTreeHistory(user.id, v1.rootVersionId);
+    expect(history.map((v) => v.id)).toEqual([v1.id, v2.id]);
   });
 
   it('builds a forest with a fork edge to the source tree', async () => {

@@ -4,7 +4,7 @@ import { resetDb } from '../../../test/db';
 
 vi.mock('@/lib/session', () => ({ getCurrentUserId: vi.fn() }));
 import { getCurrentUserId } from '@/lib/session';
-import { createObjectAction, editObjectAction } from './actions';
+import { createObjectAction, editObjectAction, listLatestObjectsAction, getObjectHistoryAction } from './actions';
 
 describe('object actions', () => {
   beforeEach(resetDb);
@@ -47,5 +47,24 @@ describe('object actions', () => {
 
     const stored = await prisma.objectVersion.findUnique({ where: { id: edited.id } });
     expect(stored?.tags).toEqual(['Backend', 'AI']);
+  });
+
+  it('listLatestObjectsAction scopes to the current session user', async () => {
+    const user = await prisma.user.create({ data: { email: 'u2@example.com', passwordHash: 'x' } });
+    vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
+    await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
+
+    const result = await listLatestObjectsAction('SKILLS');
+    expect(result).toHaveLength(1);
+  });
+
+  it('getObjectHistoryAction returns every version for the given root', async () => {
+    const user = await prisma.user.create({ data: { email: 'u3@example.com', passwordHash: 'x' } });
+    vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
+    const created = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
+    await editObjectAction(created.id, { category: 'Languages' }, 'Python, TypeScript');
+
+    const history = await getObjectHistoryAction(created.id);
+    expect(history).toHaveLength(2);
   });
 });

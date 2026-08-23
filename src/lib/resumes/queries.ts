@@ -16,6 +16,13 @@ export async function getLatestVersionsForUser(userId: string) {
   return latest;
 }
 
+export async function getResumeTreeHistory(userId: string, rootVersionId: string) {
+  return prisma.resumeVersion.findMany({
+    where: { ownerUserId: userId, rootVersionId },
+    orderBy: { createdAt: 'asc' },
+  });
+}
+
 export async function getResumeVersionWithContent(userId: string, id: string) {
   const resume = await prisma.resumeVersion.findUnique({
     where: { id },

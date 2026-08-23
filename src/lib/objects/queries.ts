@@ -11,6 +11,25 @@ export async function listObjectsForUser(userId: string, type?: ObjectType) {
   });
 }
 
+export async function listLatestObjectsForUser(userId: string, type?: ObjectType) {
+  const versions = await prisma.objectVersion.findMany({
+    where: {
+      ownerUserId: userId,
+      ...(type ? { type } : {}),
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  const seenRoots = new Set<string>();
+  const latest = [];
+  for (const v of versions) {
+    if (!seenRoots.has(v.rootVersionId)) {
+      seenRoots.add(v.rootVersionId);
+      latest.push(v);
+    }
+  }
+  return latest;
+}
+
 export async function getObjectHistory(userId: string, rootVersionId: string) {
   return prisma.objectVersion.findMany({
     where: { ownerUserId: userId, rootVersionId },
