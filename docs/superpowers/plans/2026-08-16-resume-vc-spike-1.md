@@ -1493,7 +1493,7 @@ git commit -m "feat: add object dashboard query with reverse resume lookup"
 - Consumes: `prisma`
 - Produces: `getProfile(userId: string): Promise<Profile | null>`, `upsertProfile(userId: string, data: { fullName: string; email: string; phone: string; location: string; links: Record<string, string> }): Promise<Profile>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/profile.test.ts
@@ -1530,12 +1530,12 @@ describe('profile', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/profile.test.ts`
 Expected: FAIL with "Cannot find module './profile'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/profile.ts
@@ -1562,12 +1562,12 @@ export async function upsertProfile(userId: string, data: ProfileData) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/profile.test.ts`
 Expected: PASS (1 test)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
