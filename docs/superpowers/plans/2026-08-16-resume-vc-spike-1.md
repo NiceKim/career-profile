@@ -2079,7 +2079,9 @@ Every authenticated page shares one persistent, collapsible sidebar (confirmed a
 - Consumes: `auth` (`src/lib/auth.ts`)
 - Produces: `AppLayout` — wraps every page under `(app)/`, redirects to `/login` if there's no session, and renders `<Sidebar>` + the page content side by side.
 
-- [ ] **Step 1: Write the sidebar component**
+- [x] **Step 1: Write the sidebar component**
+
+Implementation deviates from the sketch above — uses real values pulled from Figma (`get_design_context` on node `16:133`) instead of unstyled markup: cream `#faf9f5` background, `2px` black right border, pill-shaped nav links (`#e0503a`/`#8a2f1f` for the active one, black border/text otherwise), and a `32px` black rounded-square avatar — via a `Sidebar.module.css` (CSS Modules, no new dependency, no Tailwind).
 
 ```tsx
 // src/components/Sidebar.tsx
@@ -2127,7 +2129,7 @@ export function Sidebar({ initial }: { initial: string }) {
 
 The avatar is a plain `Link` to `/profile` rather than a popover menu — Profile itself hosts the "Log out" action (Task 17), so there's no separate menu component to build.
 
-- [ ] **Step 2: Write the layout**
+- [x] **Step 2: Write the layout**
 
 ```tsx
 // src/app/(app)/layout.tsx
@@ -2152,11 +2154,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
 Every existing page's own `getCurrentUserId()` call still matters — the layout's redirect is a friendlier guard, not a replacement for the value each page actually needs to scope its queries.
 
-- [ ] **Step 3: Manually verify**
+- [x] **Step 3: Manually verify**
 
-Run: `npm run dev`. Visiting any `(app)` route while logged out redirects to `/login`. Once logged in, every page shows the sidebar with R/O/AI links and a collapse toggle that persists across the session (client-side state — a page refresh resets it, which is acceptable for Spike 1).
+Verified live in the browser: visiting `/profile` while logged out redirected to `/login` (guard confirmed); logged in and confirmed the sidebar renders with the Figma styling, R/O/AI links, and a working avatar (showing the session's email initial); collapse toggle confirmed working both directions (expand ↔ collapse).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
