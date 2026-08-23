@@ -816,7 +816,7 @@ git commit -m "feat: add password hashing helpers"
 - Consumes: `prisma`, `verifyPassword` (`src/lib/password.ts`)
 - Produces: `auth()` (next-auth handle), `getCurrentUserId(): Promise<string>` (throws `Error('Not authenticated')` if no session)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `getCurrentUserId` wraps `auth()`, so test it against a mocked `auth()`:
 
@@ -844,12 +844,12 @@ describe('getCurrentUserId', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/session.test.ts`
 Expected: FAIL with "Cannot find module './auth'"
 
-- [ ] **Step 3: Write the auth config**
+- [x] **Step 3: Write the auth config**
 
 ```ts
 // src/lib/auth.ts
@@ -891,7 +891,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 });
 ```
 
-- [ ] **Step 4: Write the route handler**
+- [x] **Step 4: Write the route handler**
 
 ```ts
 // src/app/api/auth/[...nextauth]/route.ts
@@ -900,7 +900,7 @@ import { handlers } from '@/lib/auth';
 export const { GET, POST } = handlers;
 ```
 
-- [ ] **Step 5: Write the session helper**
+- [x] **Step 5: Write the session helper**
 
 ```ts
 // src/lib/session.ts
@@ -913,19 +913,19 @@ export async function getCurrentUserId(): Promise<string> {
 }
 ```
 
-- [ ] **Step 6: Add AUTH_SECRET to .env.example and .env**
+- [x] **Step 6: Add AUTH_SECRET to .env.example and .env**
 
 ```bash
 echo 'AUTH_SECRET="dev-only-secret-change-me"' >> .env.example
 echo 'AUTH_SECRET="dev-only-secret-change-me"' >> .env
 ```
 
-- [ ] **Step 7: Run test to verify it passes**
+- [x] **Step 7: Run test to verify it passes**
 
 Run: `npm test -- src/lib/session.test.ts`
 Expected: PASS (2 tests)
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add -A
