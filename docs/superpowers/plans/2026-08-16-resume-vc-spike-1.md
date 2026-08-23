@@ -1382,7 +1382,7 @@ git commit -m "feat: add resume latest-version, content, and forest queries"
 - Consumes: `prisma`
 - Produces: `getObjectDashboard(userId: string): Promise<Array<{ rootVersionId: string; type: string; versions: Array<{ id: string; versionNumber: number; body: string; tags: string[]; usedInResumeNames: string[] }> }>>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/objects/dashboard.test.ts
@@ -1428,12 +1428,12 @@ describe('getObjectDashboard', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/objects/dashboard.test.ts`
 Expected: FAIL with "Cannot find module './dashboard'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/objects/dashboard.ts
@@ -1469,12 +1469,12 @@ export async function getObjectDashboard(userId: string) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/objects/dashboard.test.ts`
 Expected: PASS (2 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
