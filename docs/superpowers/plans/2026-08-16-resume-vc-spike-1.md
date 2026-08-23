@@ -962,7 +962,7 @@ git commit -m "feat: add Auth.js credentials config and session helper"
   - `editResume(userId: string, existingVersionId: string, name: string | undefined, sections: SectionInput[]): Promise<ResumeVersion>` — the new version always becomes the tree's new latest
   - `SectionInput = { sectionType: string; order: number; items: Array<{ objectVersionId: string; order: number }> }`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/resumes/versioning.test.ts
@@ -1059,12 +1059,12 @@ describe('resume versioning', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/resumes/versioning.test.ts`
 Expected: FAIL with "Cannot find module './versioning'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/resumes/versioning.ts
@@ -1176,12 +1176,12 @@ export async function forkResume(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/resumes/versioning.test.ts`
 Expected: PASS (8 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A
