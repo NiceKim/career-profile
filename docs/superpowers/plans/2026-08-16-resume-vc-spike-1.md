@@ -12,7 +12,7 @@
 
 - Every query/mutation MUST filter by the authenticated session's `ownerUserId` — never trust a client-supplied ID without an ownership check first.
 - `object_versions` and `resume_versions` rows are immutable — every edit is an `INSERT`, never an `UPDATE` of existing content.
-- A resume can only be edited from its tree's current head (most recent) version — reject edits from a non-head version.
+- A resume tree's/object's "head"/latest version is whichever version was created most recently.
 - Object `fields` are validated by a Zod schema specific to that object's `type` before being persisted.
 - Career Q&A is stateless per the L2 scope — no memory/history carried between questions; each call sends the full context fresh.
 - No embeddings/vector search — all AI context is fetched by `ownerUserId` and injected directly into the prompt.
@@ -527,6 +527,15 @@ describe('object versioning', () => {
     expect(v2.tags).toEqual(['Backend', 'AI']);
   });
 
+  it('editing a stale (non-head) version numbers off the current latest, not the edited-from version', async () => {
+    const user = await makeUser();
+    const v1 = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const v2 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
+    const v3 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, Go');
+    expect(v3.rootVersionId).toBe(v1.rootVersionId);
+    expect(v3.versionNumber).toBe(v2.versionNumber + 1);
+  });
+
   it('rejects editing a version owned by another user', async () => {
     const owner = await makeUser();
     const attacker = await prisma.user.create({ data: { email: 'b@example.com', passwordHash: 'x' } });
@@ -586,6 +595,10 @@ export async function editObjectVersion(
   if (existing.ownerUserId !== userId) throw new Error('Not authorized');
 
   const validated = validateObjectFields(existing.type as ObjectType, fields);
+  const latest = await prisma.objectVersion.findFirst({
+    where: { rootVersionId: existing.rootVersionId },
+    orderBy: { versionNumber: 'desc' },
+  });
   const id = randomUUID();
   return prisma.objectVersion.create({
     data: {
@@ -593,7 +606,7 @@ export async function editObjectVersion(
       rootVersionId: existing.rootVersionId,
       ownerUserId: userId,
       type: existing.type,
-      versionNumber: existing.versionNumber + 1,
+      versionNumber: latest!.versionNumber + 1,
       fields: validated,
       body,
       tags,
@@ -605,7 +618,7 @@ export async function editObjectVersion(
 - [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/objects/versioning.test.ts`
-Expected: PASS (4 tests)
+Expected: PASS (5 tests)
 
 - [x] **Step 5: Commit**
 
@@ -945,8 +958,8 @@ git commit -m "feat: add Auth.js credentials config and session helper"
 - Produces (all three write exactly once — no separate "create empty, then fill" round trip; the caller passes whatever content the user has built in the form):
   - `createResumeFromScratch(userId: string, name: string, sections?: SectionInput[]): Promise<ResumeVersion>`
   - `forkResume(userId: string, sourceVersionId: string, newName: string | undefined, sections: SectionInput[]): Promise<ResumeVersion>`
-  - `isHeadVersion(resumeVersionId: string): Promise<boolean>`
-  - `editResume(userId: string, headVersionId: string, name: string | undefined, sections: SectionInput[]): Promise<ResumeVersion>`
+  - `isHeadVersion(resumeVersionId: string): Promise<boolean>` — true if this is the most recently created version in its `rootVersionId` group
+  - `editResume(userId: string, existingVersionId: string, name: string | undefined, sections: SectionInput[]): Promise<ResumeVersion>` — the new version always becomes the tree's new latest
   - `SectionInput = { sectionType: string; order: number; items: Array<{ objectVersionId: string; order: number }> }`
 
 - [ ] **Step 1: Write the failing test**
@@ -985,20 +998,19 @@ describe('resume versioning', () => {
   it('fork writes whatever content the caller submits (pre-filled from the source by the caller)', async () => {
     const user = await makeUser();
     const skill = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
-    const original = await createResumeFromScratch(user.id, 'Original');
     const sections = [
       { sectionType: 'SKILLS', order: 0, items: [{ objectVersionId: skill.id, order: 0 }] },
     ];
-    const withSection = await editResume(user.id, original.id, undefined, sections);
+    const original = await createResumeFromScratch(user.id, 'Original', sections);
 
     // Simulates the user leaving the fork form's pre-filled content unchanged.
-    const fork = await forkResume(user.id, withSection.id, 'Forked', sections);
+    const fork = await forkResume(user.id, original.id, 'Forked', sections);
 
     expect(fork.sections).toHaveLength(1);
     expect(fork.items[0].objectVersionId).toBe(skill.id);
   });
 
-  it('edit creates a new version in the same tree, pointing at the previous head', async () => {
+  it('edit creates a new version in the same tree, pointing at the version it was edited from', async () => {
     const user = await makeUser();
     const original = await createResumeFromScratch(user.id, 'Original');
     const edited = await editResume(user.id, original.id, 'Renamed', []);
@@ -1007,14 +1019,16 @@ describe('resume versioning', () => {
     expect(edited.parentVersionId).toBe(original.id);
   });
 
-  it('rejects editing a version that is not the current head', async () => {
+  it('editing a stale (non-head) version succeeds and becomes the new latest for its tree', async () => {
     const user = await makeUser();
     const v1 = await createResumeFromScratch(user.id, 'Original');
-    await editResume(user.id, v1.id, 'v2', []);
+    const v2 = await editResume(user.id, v1.id, 'v2', []);
+    const v3 = await editResume(user.id, v1.id, 'v3 from a stale version', []);
 
-    await expect(editResume(user.id, v1.id, 'stale edit', [])).rejects.toThrow(
-      'Can only edit from the current head version'
-    );
+    expect(v3.rootVersionId).toBe(v1.rootVersionId);
+    expect(v3.parentVersionId).toBe(v1.id);
+    expect(await isHeadVersion(v3.id)).toBe(true);
+    expect(await isHeadVersion(v2.id)).toBe(false);
   });
 
   it('rejects editing a resume owned by another user', async () => {
@@ -1033,7 +1047,7 @@ describe('resume versioning', () => {
     await expect(forkResume(attacker.id, original.id, 'hacked', [])).rejects.toThrow('Not authorized');
   });
 
-  it('isHeadVersion is false once a version has an in-tree child', async () => {
+  it('isHeadVersion reflects recency, not tree position', async () => {
     const user = await makeUser();
     const v1 = await createResumeFromScratch(user.id, 'Original');
     expect(await isHeadVersion(v1.id)).toBe(true);
@@ -1088,33 +1102,31 @@ export async function createResumeFromScratch(userId: string, name: string, sect
 
 export async function isHeadVersion(resumeVersionId: string): Promise<boolean> {
   const version = await prisma.resumeVersion.findUniqueOrThrow({ where: { id: resumeVersionId } });
-  const child = await prisma.resumeVersion.findFirst({
-    where: { parentVersionId: resumeVersionId, rootVersionId: version.rootVersionId },
+  const latest = await prisma.resumeVersion.findFirst({
+    where: { rootVersionId: version.rootVersionId },
+    orderBy: { createdAt: 'desc' },
   });
-  return child === null;
+  return latest?.id === resumeVersionId;
 }
 
 export async function editResume(
   userId: string,
-  headVersionId: string,
+  existingVersionId: string,
   name: string | undefined,
   sections: SectionInput[]
 ) {
-  const head = await prisma.resumeVersion.findUnique({ where: { id: headVersionId } });
-  if (!head) throw new Error('Resume version not found');
-  if (head.ownerUserId !== userId) throw new Error('Not authorized');
-  if (!(await isHeadVersion(headVersionId))) {
-    throw new Error('Can only edit from the current head version');
-  }
+  const existing = await prisma.resumeVersion.findUnique({ where: { id: existingVersionId } });
+  if (!existing) throw new Error('Resume version not found');
+  if (existing.ownerUserId !== userId) throw new Error('Not authorized');
 
   const id = randomUUID();
   return prisma.resumeVersion.create({
     data: {
       id,
-      rootVersionId: head.rootVersionId,
-      parentVersionId: head.id,
+      rootVersionId: existing.rootVersionId,
+      parentVersionId: existing.id,
       ownerUserId: userId,
-      name: name ?? head.name,
+      name: name ?? existing.name,
       sections: {
         create: sections.map((s) => ({ sectionType: s.sectionType, order: s.order })),
       },
@@ -1222,6 +1234,19 @@ describe('resume queries', () => {
     expect(latest.map((r) => r.id)).not.toContain(v1.id);
   });
 
+  it('a version edited from an older sibling still counts as the latest for its tree', async () => {
+    const user = await makeUser();
+    const v1 = await createResumeFromScratch(user.id, 'Original');
+    const v2 = await editResume(user.id, v1.id, 'v2', []);
+    const v3 = await editResume(user.id, v1.id, 'v3', []);
+
+    const latest = await getLatestVersionsForUser(user.id);
+
+    expect(latest.map((r) => r.id)).toContain(v3.id);
+    expect(latest.map((r) => r.id)).not.toContain(v2.id);
+    expect(latest.map((r) => r.id)).not.toContain(v1.id);
+  });
+
   it('returns full content with sections and items', async () => {
     const user = await makeUser();
     const skill = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
@@ -1265,13 +1290,19 @@ Expected: FAIL with "Cannot find module './queries'"
 import { prisma } from '@/lib/prisma';
 
 export async function getLatestVersionsForUser(userId: string) {
-  const versions = await prisma.resumeVersion.findMany({ where: { ownerUserId: userId } });
-  return versions.filter((v) => {
-    const hasChildInSameTree = versions.some(
-      (w) => w.parentVersionId === v.id && w.rootVersionId === v.rootVersionId
-    );
-    return !hasChildInSameTree;
+  const versions = await prisma.resumeVersion.findMany({
+    where: { ownerUserId: userId },
+    orderBy: { createdAt: 'desc' },
   });
+  const seenRoots = new Set<string>();
+  const latest = [];
+  for (const v of versions) {
+    if (!seenRoots.has(v.rootVersionId)) {
+      seenRoots.add(v.rootVersionId);
+      latest.push(v);
+    }
+  }
+  return latest;
 }
 
 export async function getResumeVersionWithContent(userId: string, id: string) {
@@ -1310,9 +1341,7 @@ export async function getResumeForest(userId: string) {
   }
 
   return Array.from(trees.entries()).map(([rootVersionId, group]) => {
-    const head = group.find(
-      (v) => !group.some((w) => w.parentVersionId === v.id)
-    )!;
+    const head = group.reduce((latest, v) => (v.createdAt > latest.createdAt ? v : latest));
     const root = group.find((v) => v.id === rootVersionId)!;
     const forkedFromRootVersionId = root.parentVersionId
       ? idToRoot.get(root.parentVersionId) ?? null
@@ -1331,7 +1360,7 @@ export async function getResumeForest(userId: string) {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/resumes/queries.test.ts`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests)
 
 - [ ] **Step 5: Commit**
 
@@ -1663,7 +1692,7 @@ git commit -m "feat: add object server actions"
 
 **Interfaces:**
 - Consumes: `getCurrentUserId`, `createResumeFromScratch`/`editResume`/`forkResume` (`src/lib/resumes/versioning.ts`)
-- Produces (each writes exactly once — `sections` is whatever the caller's form currently holds): `createResumeAction(name: string, sections?: SectionInput[]): Promise<{ id: string }>`, `editResumeAction(headVersionId: string, name: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`, `forkResumeAction(sourceVersionId: string, newName: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`
+- Produces (each writes exactly once — `sections` is whatever the caller's form currently holds): `createResumeAction(name: string, sections?: SectionInput[]): Promise<{ id: string }>`, `editResumeAction(existingVersionId: string, name: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`, `forkResumeAction(sourceVersionId: string, newName: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1763,12 +1792,12 @@ export async function createResumeAction(name: string, sections: SectionInput[] 
 }
 
 export async function editResumeAction(
-  headVersionId: string,
+  existingVersionId: string,
   name: string | undefined,
   sections: SectionInput[]
 ) {
   const userId = await getCurrentUserId();
-  const resume = await editResume(userId, headVersionId, name, sections);
+  const resume = await editResume(userId, existingVersionId, name, sections);
   return { id: resume.id };
 }
 
@@ -1923,8 +1952,6 @@ export default async function ObjectsPage({
     listObjectsForUser(userId, searchParams.type as any),
     listTagsForUser(userId),
   ]);
-  // Tag filtering is client-side: the full (type-filtered) set is already
-  // fetched, so narrowing further by tag needs no extra query.
   const activeTags = searchParams.tags ? parseTags(searchParams.tags) : [];
   const filtered =
     activeTags.length > 0
@@ -2660,7 +2687,7 @@ git commit -m "feat: add Career Q&A chat page"
 
 ## Self-Review Notes
 
-- **Spec coverage:** create/edit/fork resume (Tasks 8, 13, 16), object versioning (Tasks 4, 12, 15), resume + object history views (Tasks 9, 15), Resume Dashboard + Object Dashboard (Tasks 9, 10, 17), Profile (Task 11), Career Q&A with full-context injection and no memory (Tasks 18–20), data-isolation ownership checks (every `versioning.ts`/`queries.ts`/`actions.ts` function), immutable inserts only (no `update` calls anywhere in the versioning modules), head-only edit rule (Task 8's `isHeadVersion` check), per-version freeform tags with filtering and autocomplete (Tasks 2, 4, 5, 10, 12, 15). JD-based optimization is intentionally deferred to a later spike, per your scoping decision.
+- **Spec coverage:** create/edit/fork resume (Tasks 8, 13, 16), object versioning (Tasks 4, 12, 15), resume + object history views (Tasks 9, 15), Resume Dashboard + Object Dashboard (Tasks 9, 10, 17), Profile (Task 11), Career Q&A with full-context injection and no memory (Tasks 18–20), data-isolation ownership checks (every `versioning.ts`/`queries.ts`/`actions.ts` function), immutable inserts only (no `update` calls anywhere in the versioning modules), recency-based "latest version" tracking for both objects and resumes — edits may start from any existing version, not only the head (Task 4's `editObjectVersion`, Task 8's `editResume`/`isHeadVersion`), per-version freeform tags with filtering and autocomplete (Tasks 2, 4, 5, 10, 12, 15). JD-based optimization is intentionally deferred to a later spike, per your scoping decision.
 - **Placeholder scan:** no TBD/TODO markers; every step has runnable code.
 - **Type consistency:** `SectionInput`/section shape (`sectionType`, `order`, `items: [{ objectVersionId, order }]`) is identical across Task 8 (`createResumeFromScratch`/`editResume`/`forkResume`), Task 13 (`createResumeAction`/`editResumeAction`/`forkResumeAction`), and Task 16 (new/edit/fork pages) — checked. `tags: string[]` (default `[]`) signature is consistent across Task 4 (`createObjectVersion`/`editObjectVersion`), Task 12 (`createObjectAction`/`editObjectAction`), and Task 15 (UI forms, via the shared `parseTags` helper) — checked.
 - **`resume_version_item` → `resume_version_section` schema change:** items reference `resumeVersionId` directly (not `sectionId`); `resume_version_section` is `UNIQUE(resumeVersionId, sectionType)`, and item-to-section matching happens by `objectVersion.type` at read time in Task 9's `getResumeVersionWithContent`, not via a stored FK. Propagated through the Prisma schema, Task 8 (`editResume`/`forkResume`), Task 9 (`getResumeVersionWithContent`), Task 10 (`getObjectDashboard`), and Task 16's edit-page submit handler, which now groups selected objects by `type` into one section instead of one section per object — required by the new `UNIQUE` constraint.

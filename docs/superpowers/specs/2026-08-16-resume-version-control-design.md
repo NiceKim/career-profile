@@ -104,13 +104,13 @@ erDiagram
 
 **Key semantics:**
 
-- **Editing an object** creates a new `object_version` row (`rootVersionId` unchanged, `versionNumber` incremented) only on explicit save — not per keystroke. Existing resumes that reference the old version are unaffected; only resumes edited afterward pick up the new one.
-- **Editing a resume** creates a new `resume_version` row with `rootVersionId` unchanged (same tree) and `parentVersionId` = the version edited from. Edits are only ever made from a tree's current head (its most recent version) — editing from an older version isn't supported, since forking is the mechanism for intentionally diverging history. This keeps each tree's version chain linear and "latest version per resume," used by the JD-optimization feature, unambiguous.
+- **Editing an object** creates a new `object_version` row: `rootVersionId` unchanged, `versionNumber` = the tree's current highest plus one. Existing resumes keep pointing at whichever object version they already reference. The Object Dashboard lists every version of an object, so every variation stays visible.
+- **Editing a resume** creates a new `resume_version` row: `rootVersionId` unchanged (same tree), `parentVersionId` = the version edited from. A tree's current/"latest" version is whichever version was most recently created.
 - **Forking a resume** creates a new `resume_version` row that starts a **new tree**: `rootVersionId` = itself, `parentVersionId` = the source version (cross-tree pointer, for lineage display only — no merging back).
-- **`resume_version_item` references `resumeVersionId` directly, not `sectionId`.** `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`) — an item's section is its object's `type`, matched at render time rather than stored as a FK. `resume_version_section` still holds per-section `order` (and can exist with zero items).
-- **`fields` is JSONB, not per-type relational columns**, to avoid a sparse table with a column for every possible field across all 7 object types. "Fixed schema" is enforced at the application layer via a Zod validator per `type`, not via the DB column shape. Every query pattern in this app fetches by ID or by `ownerUserId` — nothing filters on values *inside* `fields` — so JSONB costs nothing here; a GIN/expression index can be added later if that changes.
-- **Profile** (name/email/phone/location/links, shown in a resume's header) is a single live, unversioned row per user — resumes always render the current profile, not a snapshot.
-- **Tags** are freeform strings on `object_versions`, scoped **per version, not per object** — since different versions of the same object already represent differently-targeted variations (e.g. one phrasing of a job tagged `Backend`, a rewritten phrasing of the same job tagged `Frontend`), tags follow that same per-version granularity. The object list page fetches every version for a user (`type` is the only server-side filter) and applies tag filtering client-side, since the full set is already in hand. No fixed tag taxonomy — existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`), not enforced.
+- **`resume_version_item` references `resumeVersionId` directly.** `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`); an item's section is its object's `type`, matched at render time. `resume_version_section` holds per-section `order` and can exist with zero items.
+- **`fields` is JSONB**, validated at the application layer by a Zod schema per `type`. Every query pattern in this app fetches by ID or by `ownerUserId`; nothing filters on values inside `fields`, so a GIN/expression index can be added later if that changes.
+- **Profile** (name/email/phone/location/links, shown in a resume's header) is a single live, unversioned row per user — resumes always render the current profile.
+- **Tags** are freeform strings on `object_versions`, scoped per version — different versions of the same object can represent differently-targeted variations (e.g. one phrasing tagged `Backend`, a rewritten phrasing tagged `Frontend`). The object list page fetches every version for a user (`type` is the server-side filter) and applies tag filtering client-side. Existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`).
 
 ## Core Flows
 
@@ -144,7 +144,7 @@ sequenceDiagram
 | Entry point | `rootVersionId` | `parentVersionId` | initial form content |
 |---|---|---|---|
 | **Create** | self (new tree) | `null` | empty |
-| **Edit** | head's `rootVersionId` (same tree) | head's `id` | pre-filled from the head version |
+| **Edit** | source version's `rootVersionId` (same tree) | source version's `id` | pre-filled from the version being edited |
 | **Fork** | self (new tree) | source version's `id` | pre-filled from the source version |
 
 **AI Career Q&A** (streaming, "career context" = every version of every one of the user's objects):
@@ -157,7 +157,7 @@ sequenceDiagram
     participant AI as OpenAI (Vercel AI SDK)
 
     U->>App: Ask question
-    App->>DB: SELECT latest object_version per rootVersionId WHERE ownerUserId (+ Profile)
+    App->>DB: SELECT all object_versions WHERE ownerUserId (+ Profile)
     App->>AI: streamText(context + question)
     AI-->>App: token stream
     App-->>U: streamed response

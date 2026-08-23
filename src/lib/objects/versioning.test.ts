@@ -35,6 +35,15 @@ describe('object versioning', () => {
     expect(v2.tags).toEqual(['Backend', 'AI']);
   });
 
+  it('editing a stale (non-head) version numbers off the current latest, not the edited-from version', async () => {
+    const user = await makeUser();
+    const v1 = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const v2 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
+    const v3 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, Go');
+    expect(v3.rootVersionId).toBe(v1.rootVersionId);
+    expect(v3.versionNumber).toBe(v2.versionNumber + 1);
+  });
+
   it('rejects editing a version owned by another user', async () => {
     const owner = await makeUser();
     const attacker = await prisma.user.create({ data: { email: 'b@example.com', passwordHash: 'x' } });

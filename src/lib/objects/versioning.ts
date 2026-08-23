@@ -37,6 +37,10 @@ export async function editObjectVersion(
   if (existing.ownerUserId !== userId) throw new Error('Not authorized');
 
   const validated = validateObjectFields(existing.type as ObjectType, fields);
+  const latest = await prisma.objectVersion.findFirst({
+    where: { rootVersionId: existing.rootVersionId },
+    orderBy: { versionNumber: 'desc' },
+  });
   const id = randomUUID();
   return prisma.objectVersion.create({
     data: {
@@ -44,7 +48,7 @@ export async function editObjectVersion(
       rootVersionId: existing.rootVersionId,
       ownerUserId: userId,
       type: existing.type,
-      versionNumber: existing.versionNumber + 1,
+      versionNumber: latest!.versionNumber + 1,
       fields: validated,
       body,
       tags,
