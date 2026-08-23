@@ -54,7 +54,7 @@ export async function editResume(
     data: {
       id,
       rootVersionId: existing.rootVersionId,
-      parentVersionId: existing.id,
+      parentVersionId: existing.parentVersionId,
       ownerUserId: userId,
       name: name ?? existing.name,
       sections: {

@@ -42,12 +42,14 @@ describe('resume versioning', () => {
     expect(fork.items[0].objectVersionId).toBe(skill.id);
   });
 
-  it('edit creates a new version in the same tree, pointing at the version it was edited from', async () => {
+  it('edit stays in the same tree and inherits the tree\'s fork origin, not the edited-from version\'s id', async () => {
     const user = await makeUser();
     const original = await createResumeFromScratch(user.id, 'Original');
-    const edited = await editResume(user.id, original.id, 'Renamed', []);
+    const fork = await forkResume(user.id, original.id, 'Forked', []);
+    const edited = await editResume(user.id, fork.id, 'Renamed', []);
 
-    expect(edited.rootVersionId).toBe(original.rootVersionId);
+    expect(edited.rootVersionId).toBe(fork.rootVersionId);
+    expect(edited.parentVersionId).toBe(fork.parentVersionId);
     expect(edited.parentVersionId).toBe(original.id);
   });
 
@@ -58,7 +60,7 @@ describe('resume versioning', () => {
     const v3 = await editResume(user.id, v1.id, 'v3 from a stale version', []);
 
     expect(v3.rootVersionId).toBe(v1.rootVersionId);
-    expect(v3.parentVersionId).toBe(v1.id);
+    expect(v3.parentVersionId).toBe(v1.parentVersionId);
     expect(await isHeadVersion(v3.id)).toBe(true);
     expect(await isHeadVersion(v2.id)).toBe(false);
   });

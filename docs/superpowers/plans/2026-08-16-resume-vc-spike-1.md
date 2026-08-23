@@ -1010,12 +1010,14 @@ describe('resume versioning', () => {
     expect(fork.items[0].objectVersionId).toBe(skill.id);
   });
 
-  it('edit creates a new version in the same tree, pointing at the version it was edited from', async () => {
+  it('edit stays in the same tree and inherits the tree\'s fork origin, not the edited-from version\'s id', async () => {
     const user = await makeUser();
     const original = await createResumeFromScratch(user.id, 'Original');
-    const edited = await editResume(user.id, original.id, 'Renamed', []);
+    const fork = await forkResume(user.id, original.id, 'Forked', []);
+    const edited = await editResume(user.id, fork.id, 'Renamed', []);
 
-    expect(edited.rootVersionId).toBe(original.rootVersionId);
+    expect(edited.rootVersionId).toBe(fork.rootVersionId);
+    expect(edited.parentVersionId).toBe(fork.parentVersionId);
     expect(edited.parentVersionId).toBe(original.id);
   });
 
@@ -1026,7 +1028,7 @@ describe('resume versioning', () => {
     const v3 = await editResume(user.id, v1.id, 'v3 from a stale version', []);
 
     expect(v3.rootVersionId).toBe(v1.rootVersionId);
-    expect(v3.parentVersionId).toBe(v1.id);
+    expect(v3.parentVersionId).toBe(v1.parentVersionId);
     expect(await isHeadVersion(v3.id)).toBe(true);
     expect(await isHeadVersion(v2.id)).toBe(false);
   });
@@ -1124,7 +1126,7 @@ export async function editResume(
     data: {
       id,
       rootVersionId: existing.rootVersionId,
-      parentVersionId: existing.id,
+      parentVersionId: existing.parentVersionId,
       ownerUserId: userId,
       name: name ?? existing.name,
       sections: {
@@ -1203,7 +1205,7 @@ git commit -m "feat: add resume versioning core logic (create, edit, fork)"
   - `getResumeVersionWithContent(userId: string, id: string): Promise<ResumeVersion & { sections: ... }>`
   - `getResumeForest(userId: string): Promise<Array<{ rootVersionId: string; headVersionId: string; name: string; forkedFromRootVersionId: string | null }>>`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/resumes/queries.test.ts
@@ -1278,12 +1280,12 @@ describe('resume queries', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/resumes/queries.test.ts`
 Expected: FAIL with "Cannot find module './queries'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/resumes/queries.ts
@@ -1342,9 +1344,8 @@ export async function getResumeForest(userId: string) {
 
   return Array.from(trees.entries()).map(([rootVersionId, group]) => {
     const head = group.reduce((latest, v) => (v.createdAt > latest.createdAt ? v : latest));
-    const root = group.find((v) => v.id === rootVersionId)!;
-    const forkedFromRootVersionId = root.parentVersionId
-      ? idToRoot.get(root.parentVersionId) ?? null
+    const forkedFromRootVersionId = head.parentVersionId
+      ? idToRoot.get(head.parentVersionId) ?? null
       : null;
 
     return {
@@ -1357,12 +1358,12 @@ export async function getResumeForest(userId: string) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/resumes/queries.test.ts`
 Expected: PASS (4 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A

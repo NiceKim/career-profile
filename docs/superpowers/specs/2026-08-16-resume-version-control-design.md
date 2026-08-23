@@ -43,7 +43,7 @@ flowchart LR
 Two decisions shape this model, both applied consistently:
 
 1. **No separate "identity" tables.** A `resumes` table and an `objects` table were considered and dropped — each version row carries its own identity via a self-referencing `rootVersionId`, collapsing "identity + history" into one table per concept.
-2. **Object versioning is linear; resume versioning is a tree.** Objects only ever get new versions (edits) under the same `rootVersionId` — no forking at the object level. Resumes fork, so `resume_versions` also needs `parentVersionId` to capture the edit/fork lineage edge, on top of `rootVersionId` for "which resume/tree this belongs to."
+2. **Object versioning is linear; resume versioning is a tree.** Objects only ever get new versions (edits) under the same `rootVersionId` — no forking at the object level. Resumes fork, so `resume_versions` also needs `parentVersionId` to capture the fork lineage edge, on top of `rootVersionId` for "which resume/tree this belongs to."
 
 ```mermaid
 erDiagram
@@ -84,7 +84,7 @@ erDiagram
     RESUME_VERSION {
         uuid id
         uuid rootVersionId "self if this is a new resume (incl. forks)"
-        uuid parentVersionId "nullable; edit-from or forked-from version"
+        uuid parentVersionId "nullable; the version this tree was forked from — unchanged by edits within the tree"
         uuid ownerUserId
         string name
         timestamp createdAt
@@ -106,7 +106,7 @@ erDiagram
 **Key semantics:**
 
 - **Editing an object** creates a new `object_version` row: `rootVersionId` unchanged, `versionNumber` = the tree's current highest plus one. Existing resumes keep pointing at whichever object version they already reference. The Object Dashboard lists every version of an object, so every variation stays visible.
-- **Editing a resume** creates a new `resume_version` row: `rootVersionId` unchanged (same tree), `parentVersionId` = the version edited from. A tree's current/"latest" version is whichever version was most recently created.
+- **Editing a resume** creates a new `resume_version` row: `rootVersionId` unchanged (same tree), `parentVersionId` unchanged (inherited from the version being edited — a tree's fork origin is fixed at fork time, editing never moves it). A tree's current/"latest" version is whichever version was most recently created.
 - **Forking a resume** creates a new `resume_version` row that starts a **new tree**: `rootVersionId` = itself, `parentVersionId` = the source version (cross-tree pointer, for lineage display only — no merging back).
 - **`resume_version_item` references `resumeVersionId` directly.** `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`); an item's section is its object's `type`, matched at render time. `resume_version_section` holds per-section `order` and can exist with zero items.
 - **`fields` is JSONB**, validated at the application layer by a Zod schema per `type`. Every query pattern in this app fetches by ID or by `ownerUserId`; nothing filters on values inside `fields`, so a GIN/expression index can be added later if that changes.
@@ -145,7 +145,7 @@ sequenceDiagram
 | Entry point | `rootVersionId` | `parentVersionId` | initial form content |
 |---|---|---|---|
 | **Create** | self (new tree) | `null` | empty |
-| **Edit** | source version's `rootVersionId` (same tree) | source version's `id` | pre-filled from the version being edited |
+| **Edit** | source version's `rootVersionId` (same tree) | source version's `parentVersionId` (unchanged) | pre-filled from the version being edited |
 | **Fork** | self (new tree) | source version's `id` | pre-filled from the source version |
 
 **AI Career Q&A** (streaming, "career context" = every version of every one of the user's objects):
@@ -203,7 +203,7 @@ sequenceDiagram
 - **Data isolation is the one trust boundary that's never simplified away:** every query/mutation filters by the authenticated session's `ownerUserId` — a client-supplied resume/object ID is always checked for ownership before use.
 - **AI calls:** `streamText`/`generateObject` wrapped in try/catch; on failure/timeout, show a retryable error instead of a blank state. `generateObject`'s Zod schema validation catches malformed structured output from the model (the Vercel AI SDK retries automatically on schema mismatch).
 - **Empty states:** Career Q&A and JD optimization both need a friendly message when the user has zero objects/resumes yet, instead of calling the AI with empty context.
-- **Concurrent saves:** every save is an immutable insert, never an update, so two edits from the same `parentVersionId` simply produce two diverging versions — there's no conflict to detect or lock against; this falls out of the data model.
+- **Concurrent saves:** every save is an immutable insert, never an update, so two edits started from the same version simply produce two diverging versions — there's no conflict to detect or lock against; this falls out of the data model.
 - **Field validation:** each object `type`'s Zod schema validates `fields` on write, rejecting malformed data before persistence.
 
 ## Testing Approach
