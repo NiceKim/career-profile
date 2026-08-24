@@ -2428,6 +2428,8 @@ Original sketch was a bare per-version list with a type/tag filter and one `Obje
 
 Full round-by-round detail (Figma re-reads, every live/DB verification, the reverted edit-vs-copy decision) is in the shipping commit's message, not reproduced here.
 
+- **Post-ship fix, found while reviewing Task 19's plan**: the "Recent objects" fieldset rendered unconditionally whenever `!prefillFrom`, so the Dashboard's "+ New {type}" trigger — which never passes `recentObjects` — always showed an empty, useless "Recent objects" section. Per the user, that section only makes sense in the resume-builder picker context (Task 19), where there's actually something to pick from; the dashboard's create flow never needs it. Changed the condition to `!prefillFrom && recentObjects.length > 0` — naturally hides it on the dashboard (always empty there) and shows it once Task 19 actually populates `recentObjects`. Verified live: dashboard's "+ New WORK_EXPERIENCE" now jumps straight to the create form, no empty fieldset; console clean, 46/46 tests pass.
+
 - [x] **Step 3: Manually verify**
 
 Verified structurally (compiles, type-checks clean, 46/46 tests pass) and live at every round described in Step 2 above — real objects of multiple types created through the type-aware form, tag filtering, edit-in-place confirmed against the DB, hydration warnings gone from the console. Full click-through is yours to do too; nothing here is taken on faith alone.
@@ -2443,7 +2445,9 @@ git commit -m "feat: add object dashboard with create/edit modal, drop standalon
 
 ### Task 19: Resume UI (create, view, edit, fork)
 
-Single vertical form (Figma 3a): name field, sections stack downward, each section's objects are picked via `ObjectPickerModal` (Figma 3b) rather than inline checkboxes. Because objects are now added one at a time through a modal instead of a bulk checkbox list, the form needs client-side state — it's a client component fed by server-fetched initial data, not a pure server-rendered form. Edit/Fork reuse the same form, pre-filled, with a small header showing which version they're based on. The Resume Screen gets three tabs: **Resume** (content), **History** (real — every version in the tree), **Chat** (stub — a future per-resume-scoped Q&A, disabled for Spike 1). Diff is dropped from the tab bar entirely per the same decision.
+Single vertical form (Figma 3a): name field, sections stack downward, each section's objects are picked via `ObjectPickerModal` (Figma 3b) rather than inline checkboxes. Because objects are now added one at a time through a modal instead of a bulk checkbox list, the form needs client-side state — it's a client component fed by server-fetched initial data, not a pure server-rendered form. Edit/Fork reuse the same form, pre-filled, with a small header showing which version they're based on. The Resume Screen gets three tabs: **Resume** (content), **History** (real — every version in the tree), **Chat** (stub — a future per-resume-scoped Q&A, disabled for Spike 1). Diff is dropped from the tab bar entirely per the same decision — confirmed against the actual Figma screen (node `8:62`), which still literally labels that third tab "Diff"; the plan's Chat-stub decision from task 18 planning stands, not the older Figma label.
+
+Per the user, sections also need **reorder and delete controls** — the original sketch only ever appended sections via the "+ Add Section" dropdown, with no way to change their order or remove one. Since `SectionInput.order` is already part of the write path (Task 8/9), this is purely client state + UI, no backend change.
 
 **Files:**
 - Create: `src/app/(app)/resumes/ResumeForm.tsx` (shared client form for new/edit/fork)
@@ -2472,7 +2476,7 @@ import type { ObjectType } from '@/lib/objects/schemas';
 
 const TYPES: ObjectType[] = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY', 'PROJECT', 'CERTIFICATION', 'EXTRACURRICULAR'];
 
-type Item = { objectVersionId: string; body: string };
+type Item = { objectVersionId: string; body: string; fields?: unknown; tags?: string[] };
 type Props = {
   mode: 'create' | 'edit' | 'fork';
   sourceId?: string;
@@ -2492,6 +2496,20 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
     setSections([...sections, { sectionType: type, items: [] }]);
   }
 
+  function moveSection(index: number, direction: -1 | 1) {
+    setSections((prev) => {
+      const target = index + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  function removeSection(index: number) {
+    setSections((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function openPickerFor(type: ObjectType) {
     if (!recent[type]) {
       const objs = await listLatestObjectsAction(type);
@@ -2502,6 +2520,23 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
   function addItem(type: ObjectType, item: Item) {
     setSections((prev) =>
       prev.map((s) => (s.sectionType === type ? { ...s, items: [...s.items, item] } : s))
+    );
+  }
+
+  // Item-level edit (Figma's per-item "Edit" button): reuses ObjectPickerModal's prefillFrom,
+  // same edit-in-place semantics as Task 18's chip pencil icon (new version, same rootVersionId).
+  function replaceItem(type: ObjectType, oldObjectVersionId: string, newObjectVersionId: string) {
+    setSections((prev) =>
+      prev.map((s) =>
+        s.sectionType === type
+          ? {
+              ...s,
+              items: s.items.map((it) =>
+                it.objectVersionId === oldObjectVersionId ? { ...it, objectVersionId: newObjectVersionId } : it
+              ),
+            }
+          : s
+      )
     );
   }
 
@@ -2527,12 +2562,36 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
       {versionInfo && <p>{versionInfo}</p>}
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Resume name" required />
 
-      {sections.map((section) => (
+      {sections.map((section, index) => (
         <fieldset key={section.sectionType}>
-          <legend>{section.sectionType}</legend>
+          <legend>
+            {section.sectionType}
+            <button type="button" onClick={() => moveSection(index, -1)} disabled={index === 0} aria-label="Move up">
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={() => moveSection(index, 1)}
+              disabled={index === sections.length - 1}
+              aria-label="Move down"
+            >
+              ↓
+            </button>
+            <button type="button" onClick={() => removeSection(index)} aria-label="Delete section">
+              ✕
+            </button>
+          </legend>
           <ul>
             {section.items.map((item) => (
-              <li key={item.objectVersionId}>{item.body.slice(0, 60)}</li>
+              <li key={item.objectVersionId}>
+                {item.body.slice(0, 60)}
+                <ObjectPickerModal
+                  type={section.sectionType}
+                  prefillFrom={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
+                  onPick={(newId) => replaceItem(section.sectionType, item.objectVersionId, newId)}
+                  triggerLabel="Edit"
+                />
+              </li>
             ))}
           </ul>
           <ObjectPickerModal
@@ -2573,6 +2632,8 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
 ```
 
 `openPickerFor` (lazy-loading recent objects per section type on first open) is called from each section's `ObjectPickerModal` trigger in the real implementation — left as a TODO wire-up here since the exact prop for "on open" needs a small addition to `ObjectPickerModal` (an `onOpen` callback) not shown in Task 18's sketch; flagging it now rather than pretending it's already wired.
+
+Similarly, `replaceItem` swaps in the new `objectVersionId` but keeps the stale `body`/`fields` until the next full reload — `ObjectPickerModal`'s `onPick` only ever hands back an id, not the saved version's data, so showing the freshly-edited content immediately would need either a small follow-up fetch or widening `onPick`'s signature. Flagging this now rather than pretending the preview refreshes live; worth deciding during implementation.
 
 - [ ] **Step 2: Write the create/edit/fork pages**
 
@@ -2662,6 +2723,7 @@ export default async function ViewResumePage({
   return (
     <div>
       <h1>{resume.name}</h1>
+      <p>edited {resume.createdAt.toISOString().slice(0, 10)}</p>
       <Link href={`/resumes/${resume.id}/edit`}>Edit</Link>
       <Link href={`/resumes/${resume.id}/fork`}>Fork</Link>
 
@@ -2721,9 +2783,11 @@ export async function HistoryTab({
 
 The "Chat" tab is a disabled label, not a link — nothing behind it in Spike 1.
 
+The "edited {date}" line is the closest honest match to Figma's "v4 · edited 2 days ago": `ResumeVersion` has no `versionNumber` field (unlike objects — see the recency-based-head decision), so there's no clean "v{n}" count to show, and a fuzzy "2 days ago" relative-time string would risk the same class of server/client mismatch already hit and fixed once for object chips (elapsed time can tick over a threshold between server render and client hydration). Plain `YYYY-MM-DD` from `createdAt` avoids both problems.
+
 - [ ] **Step 4: Manually verify**
 
-Run: `npm run dev`. Create a resume with objects added via the picker modal, view it, check the History tab shows one entry, edit it, confirm History now shows two entries and the edited version is the current one, fork it, and confirm the fork's header shows "Forked from...".
+Run: `npm run dev`. Create a resume with objects added via the picker modal, add a second section and reorder it above the first, delete a section and confirm its items are gone from the payload, view the resume, check the History tab shows one entry, edit it, confirm History now shows two entries and the edited version is the current one, fork it, and confirm the fork's header shows "Forked from...".
 
 - [ ] **Step 5: Commit**
 
@@ -2736,10 +2800,11 @@ git commit -m "feat: add resume create/view/edit/fork pages with picker-based se
 
 ### Task 20: Resume Dashboard UI
 
-Flat, indented rows (Figma's "1b" — the only surviving variant; the nested-cards mockup was dropped in the newer Figma file).
+Flat, indented rows (Figma's "1b"). Re-checked against the actual Figma screen (node `16:61`) and the user's read of it: the mockup's per-row `v1`/`v2`/`v3` badges suggest showing individual version history inline, but that's **not** the real intent — per the user, only *forks* get their own row (nested under whichever tree they branched from, to arbitrary depth), and a tree's row always shows only its **latest** version, never a per-version list. Version history stays where Task 19 already puts it (the resume's own History tab).
 
 **Files:**
 - Create: `src/app/(app)/dashboard/resumes/page.tsx`
+- Modify: `src/lib/resumes/queries.ts` (`getResumeForest` needs to also return each tree's head `createdAt`, so the row can show "edited {date}" — not returned today)
 
 **Interfaces:**
 - Consumes: `getCurrentUserId`, `getResumeForest` (`src/lib/resumes/queries.ts`)
@@ -2753,30 +2818,41 @@ import { getCurrentUserId } from '@/lib/session';
 import { getResumeForest } from '@/lib/resumes/queries';
 import Link from 'next/link';
 
+type Tree = Awaited<ReturnType<typeof getResumeForest>>[number];
+
+// Recurses to arbitrary depth — `forest` is already a flat list of every tree with a
+// forkedFromRootVersionId link, so a fork-of-a-fork just keeps matching one level deeper.
+function ResumeTreeRow({ tree, forest, depth = 0 }: { tree: Tree; forest: Tree[]; depth?: number }) {
+  const children = forest.filter((t) => t.forkedFromRootVersionId === tree.rootVersionId);
+  return (
+    <li style={{ marginLeft: depth * 20 }}>
+      {depth > 0 && '↳ '}
+      <Link href={`/resumes/${tree.headVersionId}`}>{tree.name}</Link>
+      {depth > 0 && ' (fork)'}
+      {' — edited '}
+      {tree.headCreatedAt.toISOString().slice(0, 10)}
+      {children.length > 0 && (
+        <ul>
+          {children.map((child) => (
+            <ResumeTreeRow key={child.rootVersionId} tree={child} forest={forest} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 export default async function ResumeDashboardPage() {
   const userId = await getCurrentUserId();
   const forest = await getResumeForest(userId);
-
-  // Flat rows, indented under whichever tree they were forked from — matches
-  // the "flat rows · indent + ↳ marks a child" wireframe note.
   const roots = forest.filter((t) => !t.forkedFromRootVersionId);
-  const childrenOf = (rootVersionId: string) => forest.filter((t) => t.forkedFromRootVersionId === rootVersionId);
 
   return (
     <div>
       <h1>My Resumes</h1>
       <ul>
         {roots.map((tree) => (
-          <li key={tree.rootVersionId}>
-            <Link href={`/resumes/${tree.headVersionId}`}>{tree.name}</Link>
-            <ul>
-              {childrenOf(tree.rootVersionId).map((child) => (
-                <li key={child.rootVersionId}>
-                  ↳ <Link href={`/resumes/${child.headVersionId}`}>{child.name}</Link> (fork)
-                </li>
-              ))}
-            </ul>
-          </li>
+          <ResumeTreeRow key={tree.rootVersionId} tree={tree} forest={forest} />
         ))}
       </ul>
       <Link href="/resumes/new">+ New resume</Link>
@@ -2785,17 +2861,17 @@ export default async function ResumeDashboardPage() {
 }
 ```
 
-Only one level of fork nesting is shown (a fork-of-a-fork would list as a top-level "orphan" here, since `roots` only catches trees with no fork origin at all) — flagging this as a real limitation worth a second pass rather than silently claiming full nesting.
+`headCreatedAt` is read directly off `getResumeForest`'s existing `head` lookup (`head.createdAt`) — the function already computes `head` internally, it just never included it in the returned object; a one-line addition, not a new query.
 
 - [ ] **Step 2: Manually verify**
 
-Run: `npm run dev`, visit `/dashboard/resumes`, confirm a forked resume shows indented under its source with a "(fork)" label.
+Run: `npm run dev`, visit `/dashboard/resumes`, confirm a forked resume shows indented under its source with a "(fork)" label and an edited date, then fork *that* fork and confirm it nests one level deeper still (not as an orphaned top-level row).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: add resume dashboard with flat indented rows"
+git commit -m "feat: add resume dashboard with recursive fork-nested rows"
 ```
 
 ---

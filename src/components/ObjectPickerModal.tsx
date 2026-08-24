@@ -81,7 +81,7 @@ export function ObjectPickerModal({
         {view === 'recent' && (
           <>
             <h2>{prefillFrom ? `Edit ${type}` : `Add Object — ${type}`}</h2>
-            {!prefillFrom && (
+            {!prefillFrom && recentObjects.length > 0 && (
               <fieldset>
                 <legend>Recent objects</legend>
                 {recentObjects.map((o) => (
