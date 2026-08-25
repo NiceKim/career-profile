@@ -2426,9 +2426,9 @@ Original sketch was a bare per-version list with a type/tag filter and one `Obje
 - Dropped the type filter (redundant with the per-type sections already there; type-scoping belongs to the resume-builder picker instead) and the "all versions" inline edit form (that view is browse-only, per the original design intent).
 - Dates are month/year precision (`type="month"`, no day), displayed via a hardcoded month-abbreviation table rather than `toLocaleDateString` — the latter caused a real server/client hydration mismatch (Node's default locale vs. the browser's OS locale disagreeing on date format).
 
-Full round-by-round detail (Figma re-reads, every live/DB verification, the reverted edit-vs-copy decision) is in the shipping commit's message, not reproduced here.
+Full round-by-round detail is in commit `4a936d0`'s message, not reproduced here.
 
-- **Post-ship fix, found while reviewing Task 19's plan**: the "Recent objects" fieldset rendered unconditionally whenever `!prefillFrom`, so the Dashboard's "+ New {type}" trigger — which never passes `recentObjects` — always showed an empty, useless "Recent objects" section. Per the user, that section only makes sense in the resume-builder picker context (Task 19), where there's actually something to pick from; the dashboard's create flow never needs it. Changed the condition to `!prefillFrom && recentObjects.length > 0` — naturally hides it on the dashboard (always empty there) and shows it once Task 19 actually populates `recentObjects`. Verified live: dashboard's "+ New WORK_EXPERIENCE" now jumps straight to the create form, no empty fieldset; console clean, 46/46 tests pass.
+- **Post-ship fix**: the "Recent objects" fieldset showed unconditionally, so the Dashboard's "+ New {type}" (which never passes `recentObjects`) always rendered it empty. Now only renders when `recentObjects.length > 0` — hidden on the dashboard, shown once Task 19 populates it.
 
 - [x] **Step 3: Manually verify**
 
@@ -2445,9 +2445,30 @@ git commit -m "feat: add object dashboard with create/edit modal, drop standalon
 
 ### Task 19: Resume UI (create, view, edit, fork)
 
-Single vertical form (Figma 3a): name field, sections stack downward, each section's objects are picked via `ObjectPickerModal` (Figma 3b) rather than inline checkboxes. Because objects are now added one at a time through a modal instead of a bulk checkbox list, the form needs client-side state — it's a client component fed by server-fetched initial data, not a pure server-rendered form. Edit/Fork reuse the same form, pre-filled, with a small header showing which version they're based on. The Resume Screen gets three tabs: **Resume** (content), **History** (real — every version in the tree), **Chat** (stub — a future per-resume-scoped Q&A, disabled for Spike 1). Diff is dropped from the tab bar entirely per the same decision — confirmed against the actual Figma screen (node `8:62`), which still literally labels that third tab "Diff"; the plan's Chat-stub decision from task 18 planning stands, not the older Figma label.
+Single vertical form (Figma 3a): name field, sections stack downward, each section's objects picked via `ObjectPickerModal` (already built, Task 18) instead of inline checkboxes — client component, server-fetched initial data. Edit/Fork reuse the same form, pre-filled. Sections support reorder (↑/↓) and delete, using the `order` field the write path already supports. Resume Screen has three tabs: **Resume**, **History** (real), **Chat** (stub, disabled).
 
-Per the user, sections also need **reorder and delete controls** — the original sketch only ever appended sections via the "+ Add Section" dropdown, with no way to change their order or remove one. Since `SectionInput.order` is already part of the write path (Task 8/9), this is purely client state + UI, no backend change.
+`ObjectPickerModal`'s actual current props, for reference (Task 18 built this; don't re-derive it from an old sketch):
+
+```ts
+type ObjectSummary = {
+  id: string;
+  rootVersionId?: string;
+  body: string;
+  versionNumber: number;
+  fields?: unknown;
+  tags?: string[];
+  createdAt?: string | Date;
+};
+type Props = {
+  type: ObjectType;
+  recentObjects?: ObjectSummary[]; // only rendered when non-empty
+  onPick: (objectVersionId: string) => void;
+  triggerLabel?: string;
+  editingRootVersionId?: string; // browse-only "all versions", no create/edit form
+  prefillFrom?: ObjectSummary; // prefills + edits in place via editObjectAction
+  onOpen?: () => void; // NOT in the component yet — this task adds it, see Step 1
+};
+```
 
 **Files:**
 - Create: `src/app/(app)/resumes/ResumeForm.tsx` (shared client form for new/edit/fork)
@@ -2456,6 +2477,7 @@ Per the user, sections also need **reorder and delete controls** — the origina
 - Create: `src/app/(app)/resumes/[id]/edit/page.tsx`
 - Create: `src/app/(app)/resumes/[id]/fork/page.tsx`
 - Create: `src/app/(app)/resumes/[id]/HistoryTab.tsx`
+- Modify: `src/components/ObjectPickerModal.tsx` (add an `onOpen` callback prop, see Step 1 — `ResumeForm`'s lazy-loaded `recentObjects` needs to fire when the picker opens, which the component has no hook for today)
 
 **Interfaces:**
 - Consumes: `getCurrentUserId`, `getResumeVersionWithContent`, `getResumeTreeHistory` (`src/lib/resumes/queries.ts`), `listLatestObjectsAction` (`src/app/objects/actions.ts`), `createResumeAction`/`editResumeAction`/`forkResumeAction` (`src/app/resumes/actions.ts`), `ObjectPickerModal` (Task 18)
@@ -2476,7 +2498,17 @@ import type { ObjectType } from '@/lib/objects/schemas';
 
 const TYPES: ObjectType[] = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY', 'PROJECT', 'CERTIFICATION', 'EXTRACURRICULAR'];
 
-type Item = { objectVersionId: string; body: string; fields?: unknown; tags?: string[] };
+// Mirrors ObjectPickerModal's ObjectSummary (objectVersionId instead of id, since that's
+// what a resume section stores) so recentObjects/prefillFrom never have to fabricate data.
+type Item = {
+  objectVersionId: string;
+  body: string;
+  fields?: unknown;
+  tags?: string[];
+  rootVersionId?: string;
+  versionNumber?: number;
+  createdAt?: string | Date;
+};
 type Props = {
   mode: 'create' | 'edit' | 'fork';
   sourceId?: string;
@@ -2513,7 +2545,18 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
   async function openPickerFor(type: ObjectType) {
     if (!recent[type]) {
       const objs = await listLatestObjectsAction(type);
-      setRecent((r) => ({ ...r, [type]: objs.map((o) => ({ objectVersionId: o.id, body: o.body })) }));
+      setRecent((r) => ({
+        ...r,
+        [type]: objs.map((o) => ({
+          objectVersionId: o.id,
+          body: o.body,
+          fields: o.fields,
+          tags: o.tags,
+          rootVersionId: o.rootVersionId,
+          versionNumber: o.versionNumber,
+          createdAt: o.createdAt,
+        })),
+      }));
     }
   }
 
@@ -2598,10 +2641,14 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
             type={section.sectionType}
             recentObjects={(recent[section.sectionType] ?? []).map((r) => ({
               id: r.objectVersionId,
-              rootVersionId: r.objectVersionId,
+              rootVersionId: r.rootVersionId,
               body: r.body,
-              versionNumber: 0,
+              versionNumber: r.versionNumber ?? 0,
+              fields: r.fields,
+              tags: r.tags,
+              createdAt: r.createdAt,
             }))}
+            onOpen={() => openPickerFor(section.sectionType)}
             onPick={(objectVersionId) => {
               const picked =
                 recent[section.sectionType]?.find((r) => r.objectVersionId === objectVersionId) ?? {
@@ -2631,9 +2678,43 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
 }
 ```
 
-`openPickerFor` (lazy-loading recent objects per section type on first open) is called from each section's `ObjectPickerModal` trigger in the real implementation — left as a TODO wire-up here since the exact prop for "on open" needs a small addition to `ObjectPickerModal` (an `onOpen` callback) not shown in Task 18's sketch; flagging it now rather than pretending it's already wired.
+The `onOpen` prop this sketch relies on doesn't exist on `ObjectPickerModal` yet — this task adds it, in `src/components/ObjectPickerModal.tsx`:
 
-Similarly, `replaceItem` swaps in the new `objectVersionId` but keeps the stale `body`/`fields` until the next full reload — `ObjectPickerModal`'s `onPick` only ever hands back an id, not the saved version's data, so showing the freshly-edited content immediately would need either a small follow-up fetch or widening `onPick`'s signature. Flagging this now rather than pretending the preview refreshes live; worth deciding during implementation.
+```diff
+ type Props = {
+   type: ObjectType;
+   recentObjects?: ObjectSummary[];
+   onPick: (objectVersionId: string) => void;
+   triggerLabel?: string;
+   editingRootVersionId?: string;
+   prefillFrom?: ObjectSummary;
++  onOpen?: () => void;
+ };
+
+ export function ObjectPickerModal({
+   type,
+   recentObjects = [],
+   onPick,
+   triggerLabel = '+ Object',
+   editingRootVersionId,
+   prefillFrom,
++  onOpen,
+ }: Props) {
+   ...
+   function open() {
+     if (editingRootVersionId) {
+       openAllVersions(editingRootVersionId);
+     } else {
+       setView('recent');
++      onOpen?.();
+     }
+     dialogRef.current?.showModal();
+   }
+```
+
+Fires only on the plain "recent picker" path — not on `editingRootVersionId`'s browse-only open, not needed there since that already fetches on open via `openAllVersions`.
+
+Separately: `replaceItem` swaps in the new `objectVersionId` but keeps the stale `body`/`fields` until reload, since `onPick` only ever returns an id — decide during implementation whether that needs a follow-up fetch.
 
 - [ ] **Step 2: Write the create/edit/fork pages**
 
@@ -2698,7 +2779,7 @@ export default async function ForkResumePage({ params }: { params: { id: string 
 }
 ```
 
-`versionInfo`'s "v{id.slice(0,8)}" placeholder is a stand-in — `ResumeVersion` has no `versionNumber` field (unlike objects; see the recency-based-head design decision), so there's no clean short label to show here yet. Worth deciding during implementation whether to show `createdAt` instead, or nothing.
+`versionInfo`'s "v{id.slice(0,8)}" is a placeholder — `ResumeVersion` has no `versionNumber` field, so there's no clean short label yet; decide during implementation.
 
 - [ ] **Step 3: Write the view page with Resume / History / Chat tabs**
 
@@ -2781,9 +2862,7 @@ export async function HistoryTab({
 }
 ```
 
-The "Chat" tab is a disabled label, not a link — nothing behind it in Spike 1.
-
-The "edited {date}" line is the closest honest match to Figma's "v4 · edited 2 days ago": `ResumeVersion` has no `versionNumber` field (unlike objects — see the recency-based-head decision), so there's no clean "v{n}" count to show, and a fuzzy "2 days ago" relative-time string would risk the same class of server/client mismatch already hit and fixed once for object chips (elapsed time can tick over a threshold between server render and client hydration). Plain `YYYY-MM-DD` from `createdAt` avoids both problems.
+"Chat" is a disabled label, not a link. "edited {date}" uses plain `YYYY-MM-DD` from `createdAt`, not a fuzzy "2 days ago" (no `versionNumber` field to show instead, and relative-time strings risk the same server/client hydration mismatch already hit once for object dates).
 
 - [ ] **Step 4: Manually verify**
 
@@ -2800,7 +2879,7 @@ git commit -m "feat: add resume create/view/edit/fork pages with picker-based se
 
 ### Task 20: Resume Dashboard UI
 
-Flat, indented rows (Figma's "1b"). Re-checked against the actual Figma screen (node `16:61`) and the user's read of it: the mockup's per-row `v1`/`v2`/`v3` badges suggest showing individual version history inline, but that's **not** the real intent — per the user, only *forks* get their own row (nested under whichever tree they branched from, to arbitrary depth), and a tree's row always shows only its **latest** version, never a per-version list. Version history stays where Task 19 already puts it (the resume's own History tab).
+Flat, indented rows (Figma's "1b"). Only *forks* get their own row, nested under whichever tree they branched from, to arbitrary depth; a tree's row always shows its **latest** version only — no per-version rows (that's Task 19's History tab).
 
 **Files:**
 - Create: `src/app/(app)/dashboard/resumes/page.tsx`
@@ -2861,7 +2940,7 @@ export default async function ResumeDashboardPage() {
 }
 ```
 
-`headCreatedAt` is read directly off `getResumeForest`'s existing `head` lookup (`head.createdAt`) — the function already computes `head` internally, it just never included it in the returned object; a one-line addition, not a new query.
+`headCreatedAt` = `head.createdAt` — `getResumeForest` already computes `head` internally, just never returned it.
 
 - [ ] **Step 2: Manually verify**
 
@@ -3153,4 +3232,4 @@ git commit -m "feat: add Career Q&A chat page"
 - **New data-layer additions (Task 14), needed once picking/editing moved into modals on client components:** `listLatestObjectsForUser` + `getResumeTreeHistory` (`lib/`), and `listLatestObjectsAction` + `getObjectHistoryAction` (`app/objects/actions.ts`, since client components can't call `lib/` functions directly). All follow existing established patterns — `listLatestObjectsForUser` mirrors `getLatestVersionsForUser`'s dedupe-by-recency shape; `getResumeTreeHistory` mirrors `getObjectHistory`'s shape.
 - **Resume Screen tabs:** Resume / History / Chat, not Resume / History / Diff. History is real (Task 14's `getResumeTreeHistory`). Diff was explicitly deferred past Spike 1; a new "Chat" idea (per-resume-scoped Q&A, distinct from the global Q&A which uses every object) replaced Diff's tab slot but is a disabled stub for Spike 1 — no function behind it.
 - **New Profile page (Task 17):** not in the original plan's file list, not in Figma — added because the sidebar avatar (Task 16) needs a destination, and `getProfile`/`upsertProfile` (Task 11) had no UI consumer at all until now.
-- **Known rough edges flagged, not resolved, in these sketches** (expected to get worked out during actual TDD implementation, same as every prior task in this plan): `ObjectPickerModal`'s "on open, lazy-load recent objects" wiring in `ResumeForm` (Task 19) needs a small prop addition not fully specified here; `onPick` handlers calling `redirect()`/needing a refresh after a modal save are placeholders for what's likely `router.refresh()` in practice; the Resume Dashboard's fork nesting (Task 20) only renders one level deep.
+- **Known rough edges, since resolved:** `ObjectPickerModal`'s `onOpen` prop is now fully specified in Task 19 (was a vague TODO); the Resume Dashboard's fork nesting (Task 20) now recurses to arbitrary depth (was one level only). Still open: `onPick` handlers calling `redirect()` in these sketches are placeholders for what's likely `router.refresh()` in practice, same as Task 18 hit for real.
