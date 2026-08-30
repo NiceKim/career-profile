@@ -33,6 +33,9 @@ type Props = {
   // Prefills the form from this version's fields/body/tags. Submitting saves a new version
   // of this same object (same rootVersionId) via editObjectAction — an edit-in-place, not a copy.
   prefillFrom?: ObjectSummary;
+  // Fires when the plain "recent picker" view opens (not the editingRootVersionId browse view,
+  // which already fetches on open). Lets a caller lazy-load recentObjects on first open.
+  onOpen?: () => void;
 };
 
 export function ObjectPickerModal({
@@ -42,6 +45,7 @@ export function ObjectPickerModal({
   triggerLabel = '+ Object',
   editingRootVersionId,
   prefillFrom,
+  onOpen,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [view, setView] = useState<'recent' | 'allVersions'>('recent');
@@ -57,6 +61,7 @@ export function ObjectPickerModal({
       openAllVersions(editingRootVersionId);
     } else {
       setView('recent');
+      onOpen?.();
     }
     dialogRef.current?.showModal();
   }

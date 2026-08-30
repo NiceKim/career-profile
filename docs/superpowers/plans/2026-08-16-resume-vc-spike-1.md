@@ -2447,7 +2447,7 @@ git commit -m "feat: add object dashboard with create/edit modal, drop standalon
 
 Single vertical form (Figma 3a): name field, sections stack downward, each section's objects picked via `ObjectPickerModal` (already built, Task 18) instead of inline checkboxes — client component, server-fetched initial data. Edit/Fork reuse the same form, pre-filled. Sections support reorder (↑/↓) and delete, using the `order` field the write path already supports. Resume Screen has three tabs: **Resume**, **History** (real), **Chat** (stub, disabled).
 
-`ObjectPickerModal`'s actual current props, for reference (Task 18 built this; don't re-derive it from an old sketch):
+`ObjectPickerModal`'s current props, for reference (Task 18 built this; don't re-derive it from an old sketch — it does not have an `onOpen` prop today, Step 1 below adds one):
 
 ```ts
 type ObjectSummary = {
@@ -2466,24 +2466,62 @@ type Props = {
   triggerLabel?: string;
   editingRootVersionId?: string; // browse-only "all versions", no create/edit form
   prefillFrom?: ObjectSummary; // prefills + edits in place via editObjectAction
-  onOpen?: () => void; // NOT in the component yet — this task adds it, see Step 1
 };
 ```
 
 **Files:**
+- Modify: `src/components/ObjectPickerModal.tsx` (add an `onOpen` callback prop — Step 1)
 - Create: `src/app/(app)/resumes/ResumeForm.tsx` (shared client form for new/edit/fork)
 - Create: `src/app/(app)/resumes/new/page.tsx`
 - Create: `src/app/(app)/resumes/[id]/page.tsx`
 - Create: `src/app/(app)/resumes/[id]/edit/page.tsx`
 - Create: `src/app/(app)/resumes/[id]/fork/page.tsx`
 - Create: `src/app/(app)/resumes/[id]/HistoryTab.tsx`
-- Modify: `src/components/ObjectPickerModal.tsx` (add an `onOpen` callback prop, see Step 1 — `ResumeForm`'s lazy-loaded `recentObjects` needs to fire when the picker opens, which the component has no hook for today)
+- Create: `src/app/(app)/resumes/[id]/ResumeView.module.css` (styled against Figma node `8:62` — outline/filled pill buttons, active-tab bold, dashed section boxes)
 
 **Interfaces:**
 - Consumes: `getCurrentUserId`, `getResumeVersionWithContent`, `getResumeTreeHistory` (`src/lib/resumes/queries.ts`), `listLatestObjectsAction` (`src/app/objects/actions.ts`), `createResumeAction`/`editResumeAction`/`forkResumeAction` (`src/app/resumes/actions.ts`), `ObjectPickerModal` (Task 18)
-- Produces: working `/resumes/new`, `/resumes/[id]`, `/resumes/[id]/edit`, `/resumes/[id]/fork` pages, each writing exactly once on submit.
+- Produces: working `/resumes/new`, `/resumes/[id]`, `/resumes/[id]/edit`, `/resumes/[id]/fork` pages, each writing exactly once on submit; an `onOpen` prop added to `ObjectPickerModal`.
 
-- [ ] **Step 1: Write the shared form**
+- [x] **Step 1: Add an `onOpen` prop to `ObjectPickerModal`**
+
+`ResumeForm` (Step 2) needs to lazy-load a section's recent objects only when that section's picker is actually opened, not eagerly for every section on mount. `ObjectPickerModal` has no hook for "the picker just opened" — this step adds one, on its own, before anything is built that depends on it.
+
+```diff
+ type Props = {
+   type: ObjectType;
+   recentObjects?: ObjectSummary[];
+   onPick: (objectVersionId: string) => void;
+   triggerLabel?: string;
+   editingRootVersionId?: string;
+   prefillFrom?: ObjectSummary;
++  onOpen?: () => void;
+ };
+
+ export function ObjectPickerModal({
+   type,
+   recentObjects = [],
+   onPick,
+   triggerLabel = '+ Object',
+   editingRootVersionId,
+   prefillFrom,
++  onOpen,
+ }: Props) {
+   ...
+   function open() {
+     if (editingRootVersionId) {
+       openAllVersions(editingRootVersionId);
+     } else {
+       setView('recent');
++      onOpen?.();
+     }
+     dialogRef.current?.showModal();
+   }
+```
+
+Fires only on the plain "recent picker" path — `editingRootVersionId`'s browse-only open already fetches on open via `openAllVersions`, doesn't need it. No existing caller passes `onOpen`, so this is additive and doesn't change current behavior anywhere it's already used (Task 18's dashboard, and its own per-chip edit trigger).
+
+- [x] **Step 2: Write the shared form**
 
 ```tsx
 // src/app/(app)/resumes/ResumeForm.tsx
@@ -2678,45 +2716,9 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
 }
 ```
 
-The `onOpen` prop this sketch relies on doesn't exist on `ObjectPickerModal` yet — this task adds it, in `src/components/ObjectPickerModal.tsx`:
+`onOpen` is used here as added by Step 1. Separately: `replaceItem` swaps in the new `objectVersionId` but keeps the stale `body`/`fields` until reload, since `onPick` only ever returns an id — decide during implementation whether that needs a follow-up fetch.
 
-```diff
- type Props = {
-   type: ObjectType;
-   recentObjects?: ObjectSummary[];
-   onPick: (objectVersionId: string) => void;
-   triggerLabel?: string;
-   editingRootVersionId?: string;
-   prefillFrom?: ObjectSummary;
-+  onOpen?: () => void;
- };
-
- export function ObjectPickerModal({
-   type,
-   recentObjects = [],
-   onPick,
-   triggerLabel = '+ Object',
-   editingRootVersionId,
-   prefillFrom,
-+  onOpen,
- }: Props) {
-   ...
-   function open() {
-     if (editingRootVersionId) {
-       openAllVersions(editingRootVersionId);
-     } else {
-       setView('recent');
-+      onOpen?.();
-     }
-     dialogRef.current?.showModal();
-   }
-```
-
-Fires only on the plain "recent picker" path — not on `editingRootVersionId`'s browse-only open, not needed there since that already fetches on open via `openAllVersions`.
-
-Separately: `replaceItem` swaps in the new `objectVersionId` but keeps the stale `body`/`fields` until reload, since `onPick` only ever returns an id — decide during implementation whether that needs a follow-up fetch.
-
-- [ ] **Step 2: Write the create/edit/fork pages**
+- [x] **Step 3: Write the create/edit/fork pages**
 
 ```tsx
 // src/app/(app)/resumes/new/page.tsx
@@ -2746,7 +2748,15 @@ export default async function EditResumePage({ params }: { params: { id: string 
       initialName={resume.name}
       initialSections={resume.sections.map((s) => ({
         sectionType: s.sectionType as any,
-        items: s.items.map((it) => ({ objectVersionId: it.objectVersionId, body: it.objectVersion.body })),
+        items: s.items.map((it) => ({
+          objectVersionId: it.objectVersionId,
+          body: it.objectVersion.body,
+          fields: it.objectVersion.fields,
+          tags: it.objectVersion.tags,
+          rootVersionId: it.objectVersion.rootVersionId,
+          versionNumber: it.objectVersion.versionNumber,
+          createdAt: it.objectVersion.createdAt,
+        })),
       }))}
       versionInfo={`Editing from v${resume.id.slice(0, 8)}`}
     />
@@ -2771,7 +2781,15 @@ export default async function ForkResumePage({ params }: { params: { id: string 
       initialName={`Fork of ${source.name}`}
       initialSections={source.sections.map((s) => ({
         sectionType: s.sectionType as any,
-        items: s.items.map((it) => ({ objectVersionId: it.objectVersionId, body: it.objectVersion.body })),
+        items: s.items.map((it) => ({
+          objectVersionId: it.objectVersionId,
+          body: it.objectVersion.body,
+          fields: it.objectVersion.fields,
+          tags: it.objectVersion.tags,
+          rootVersionId: it.objectVersion.rootVersionId,
+          versionNumber: it.objectVersion.versionNumber,
+          createdAt: it.objectVersion.createdAt,
+        })),
       }))}
       versionInfo={`Forked from ${source.name}`}
     />
@@ -2779,9 +2797,11 @@ export default async function ForkResumePage({ params }: { params: { id: string 
 }
 ```
 
+Both mappings carry the item's full `fields`/`tags`/`rootVersionId`/`versionNumber`/`createdAt`, not just `objectVersionId`/`body` — `getResumeVersionWithContent` already includes the full `objectVersion` row (`include: { objectVersion: true }`), so this is free. Without it, the per-item "Edit" trigger's `prefillFrom` (Step 2) would only work for items added fresh in this session, silently losing data for anything loaded from an existing resume on edit/fork.
+
 `versionInfo`'s "v{id.slice(0,8)}" is a placeholder — `ResumeVersion` has no `versionNumber` field, so there's no clean short label yet; decide during implementation.
 
-- [ ] **Step 3: Write the view page with Resume / History / Chat tabs**
+- [x] **Step 4: Write the view page with Resume / History / Chat tabs**
 
 ```tsx
 // src/app/(app)/resumes/[id]/page.tsx
@@ -2864,11 +2884,15 @@ export async function HistoryTab({
 
 "Chat" is a disabled label, not a link. "edited {date}" uses plain `YYYY-MM-DD` from `createdAt`, not a fuzzy "2 days ago" (no `versionNumber` field to show instead, and relative-time strings risk the same server/client hydration mismatch already hit once for object dates).
 
-- [ ] **Step 4: Manually verify**
+Two real fixes found writing the actual code, not just the sketch: `ResumeForm.tsx`'s import of the resume actions has to be `@/app/resumes/actions` (absolute), not the sketch's `./actions` — the real file lives at `src/app/resumes/actions.ts`, outside the `(app)` route group, same pattern as `objects/actions.ts`; a relative import from `src/app/(app)/resumes/ResumeForm.tsx` would resolve to a file that doesn't exist. And every page's `params`/`searchParams` had to become `Promise<...>` + `await` — Next.js 16's async API, already established everywhere else in this plan, the sketch just hadn't been updated to match.
 
-Run: `npm run dev`. Create a resume with objects added via the picker modal, add a second section and reorder it above the first, delete a section and confirm its items are gone from the payload, view the resume, check the History tab shows one entry, edit it, confirm History now shows two entries and the edited version is the current one, fork it, and confirm the fork's header shows "Forked from...".
+Type-checks clean (only the 3 pre-existing unrelated test-file errors remain), 46/46 tests pass. Manual click-through deferred — the user will do it once both Task 19 and Task 20 are complete.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Manually verify**
+
+Run: `npm run dev`. Confirm `onOpen` fires as expected (Step 1), then create a resume with objects added via the picker modal, add a second section and reorder it above the first, delete a section and confirm its items are gone from the payload, view the resume, check the History tab shows one entry, edit it — confirm the pre-existing item still has a working "Edit" trigger (not just newly-added ones) — confirm History now shows two entries and the edited version is the current one, fork it, and confirm the fork's header shows "Forked from...".
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
@@ -2883,13 +2907,14 @@ Flat, indented rows (Figma's "1b"). Only *forks* get their own row, nested under
 
 **Files:**
 - Create: `src/app/(app)/dashboard/resumes/page.tsx`
+- Create: `src/app/(app)/dashboard/resumes/ResumeDashboard.module.css` (styled against Figma node `16:61` — row dividers, pill fork badge, 📄/↳ icons)
 - Modify: `src/lib/resumes/queries.ts` (`getResumeForest` needs to also return each tree's head `createdAt`, so the row can show "edited {date}" — not returned today)
 
 **Interfaces:**
 - Consumes: `getCurrentUserId`, `getResumeForest` (`src/lib/resumes/queries.ts`)
 - Produces: working `/dashboard/resumes` page.
 
-- [ ] **Step 1: Write the page**
+- [x] **Step 1: Write the page**
 
 ```tsx
 // src/app/(app)/dashboard/resumes/page.tsx
@@ -2906,10 +2931,14 @@ function ResumeTreeRow({ tree, forest, depth = 0 }: { tree: Tree; forest: Tree[]
   return (
     <li style={{ marginLeft: depth * 20 }}>
       {depth > 0 && '↳ '}
-      <Link href={`/resumes/${tree.headVersionId}`}>{tree.name}</Link>
-      {depth > 0 && ' (fork)'}
-      {' — edited '}
-      {tree.headCreatedAt.toISOString().slice(0, 10)}
+      {/* Whole row is one link — not just the name — so clicking anywhere on it
+          (the fork label, the edited date) routes to the resume, not just the name text. */}
+      <Link href={`/resumes/${tree.headVersionId}`}>
+        {tree.name}
+        {depth > 0 && ' (fork)'}
+        {' — edited '}
+        {tree.headCreatedAt.toISOString().slice(0, 10)}
+      </Link>
       {children.length > 0 && (
         <ul>
           {children.map((child) => (
@@ -2944,7 +2973,7 @@ export default async function ResumeDashboardPage() {
 
 - [ ] **Step 2: Manually verify**
 
-Run: `npm run dev`, visit `/dashboard/resumes`, confirm a forked resume shows indented under its source with a "(fork)" label and an edited date, then fork *that* fork and confirm it nests one level deeper still (not as an orphaned top-level row).
+Run: `npm run dev`, visit `/dashboard/resumes`, confirm a forked resume shows indented under its source with a "(fork)" label and an edited date, then fork *that* fork and confirm it nests one level deeper still (not as an orphaned top-level row). Click a row anywhere along its text — not just the resume name — and confirm it routes to that resume's page; click a child row specifically and confirm it goes to the child, not the parent.
 
 - [ ] **Step 3: Commit**
 

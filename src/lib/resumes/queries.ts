@@ -68,6 +68,7 @@ export async function getResumeForest(userId: string) {
       rootVersionId,
       headVersionId: head.id,
       name: head.name,
+      headCreatedAt: head.createdAt,
       forkedFromRootVersionId,
     };
   });
