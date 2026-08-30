@@ -77,6 +77,11 @@ select {
   border-radius: 6px;
 }
 
+textarea {
+  min-height: 8rem;
+  resize: vertical;
+}
+
 button {
   padding: 0.5rem 1.1rem;
   align-self: flex-start;
@@ -122,8 +127,14 @@ nav {
 }
 
 dialog {
+  /* The `* { margin: 0 }` reset above also zeroes the browser's own
+     `margin: auto` centering for an open (:modal) dialog — restore it here,
+     otherwise it renders pinned to the top-left of the viewport instead. */
+  margin: auto;
   padding: 1.25rem;
-  max-width: 480px;
+  width: min(560px, 92vw);
+  max-height: 85vh;
+  overflow-y: auto;
   background: var(--background);
   border: 2px solid var(--border);
   border-radius: 10px;

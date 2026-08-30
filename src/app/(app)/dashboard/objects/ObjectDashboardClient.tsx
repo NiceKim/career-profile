@@ -17,8 +17,9 @@ const TYPES: ObjectType[] = [
   'EXTRACURRICULAR',
 ];
 
-// How many recent versions to show in a filmstrip before you have to open "→" for the rest.
-const CHIP_LIMIT = 3;
+// How many recent versions to show before you have to open "→" for the rest.
+// 4 = exactly 2 full rows at the 2-column chip grid width.
+const CHIP_LIMIT = 4;
 
 type DashboardEntry = {
   rootVersionId: string;
@@ -64,8 +65,10 @@ export function ObjectDashboardClient({
         const entries = dashboard.filter((e) => e.type === type);
         return (
           <section key={type}>
-            <h2>{type}</h2>
-            <ObjectPickerModal type={type} onPick={refresh} triggerLabel={`+ New ${type}`} />
+            <div className={styles.sectionHeader}>
+              <h2>{type}</h2>
+              <ObjectPickerModal type={type} onPick={refresh} triggerLabel={`+ New ${type}`} />
+            </div>
             <div className={styles.entriesGrid}>
               {entries.map((entry) => {
                 const root = entry.versions[0];
@@ -85,14 +88,16 @@ export function ObjectDashboardClient({
                           }
                         />
                       ))}
-                      <div className={styles.moreChip}>
-                        <ObjectPickerModal
-                          type={type}
-                          editingRootVersionId={entry.rootVersionId}
-                          onPick={refresh}
-                          triggerLabel="→"
-                        />
-                      </div>
+                      {entry.versions.length > CHIP_LIMIT && (
+                        <div className={styles.moreChip}>
+                          <ObjectPickerModal
+                            type={type}
+                            editingRootVersionId={entry.rootVersionId}
+                            onPick={refresh}
+                            triggerLabel="→"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
