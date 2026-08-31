@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createResumeAction, editResumeAction, forkResumeAction } from '@/app/resumes/actions';
 import { ObjectPickerModal } from '@/components/ObjectPickerModal';
+import { ObjectVersionChip } from '@/components/ObjectVersionChip';
 import { listLatestObjectsAction } from '@/app/objects/actions';
 import type { ObjectType } from '@/lib/objects/schemas';
 import styles from './ResumeForm.module.css';
@@ -21,6 +22,29 @@ type Item = {
   versionNumber?: number;
   createdAt?: string | Date;
 };
+// What ObjectPickerModal's onPick now hands back (the full saved/picked object).
+type Picked = {
+  id: string;
+  body: string;
+  fields?: unknown;
+  tags?: string[];
+  rootVersionId?: string;
+  versionNumber?: number;
+  createdAt?: string | Date;
+};
+
+function toItem(picked: Picked): Item {
+  return {
+    objectVersionId: picked.id,
+    body: picked.body,
+    fields: picked.fields,
+    tags: picked.tags,
+    rootVersionId: picked.rootVersionId,
+    versionNumber: picked.versionNumber,
+    createdAt: picked.createdAt,
+  };
+}
+
 type Props = {
   mode: 'create' | 'edit' | 'fork';
   sourceId?: string;
@@ -78,15 +102,13 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
 
   // Item-level edit (Figma's per-item "Edit" button): reuses ObjectPickerModal's prefillFrom,
   // same edit-in-place semantics as Task 18's chip pencil icon (new version, same rootVersionId).
-  function replaceItem(type: ObjectType, oldObjectVersionId: string, newObjectVersionId: string) {
+  function replaceItem(type: ObjectType, oldObjectVersionId: string, picked: Picked) {
     setSections((prev) =>
       prev.map((s) =>
         s.sectionType === type
           ? {
               ...s,
-              items: s.items.map((it) =>
-                it.objectVersionId === oldObjectVersionId ? { ...it, objectVersionId: newObjectVersionId } : it
-              ),
+              items: s.items.map((it) => (it.objectVersionId === oldObjectVersionId ? toItem(picked) : it)),
             }
           : s
       )
@@ -137,12 +159,17 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
           <ul>
             {section.items.map((item) => (
               <li key={item.objectVersionId}>
-                {item.body.slice(0, 60)}
-                <ObjectPickerModal
+                <ObjectVersionChip
                   type={section.sectionType}
-                  prefillFrom={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
-                  onPick={(newId) => replaceItem(section.sectionType, item.objectVersionId, newId)}
-                  triggerLabel="Edit"
+                  version={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags }}
+                  editTrigger={
+                    <ObjectPickerModal
+                      type={section.sectionType}
+                      prefillFrom={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
+                      onPick={(picked) => replaceItem(section.sectionType, item.objectVersionId, picked)}
+                      triggerLabel="Edit"
+                    />
+                  }
                 />
               </li>
             ))}
@@ -159,13 +186,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
               createdAt: r.createdAt,
             }))}
             onOpen={() => openPickerFor(section.sectionType)}
-            onPick={(objectVersionId) => {
-              const picked = recent[section.sectionType]?.find((r) => r.objectVersionId === objectVersionId) ?? {
-                objectVersionId,
-                body: '(new)',
-              };
-              addItem(section.sectionType, picked);
-            }}
+            onPick={(picked) => addItem(section.sectionType, toItem(picked))}
           />
         </fieldset>
       ))}

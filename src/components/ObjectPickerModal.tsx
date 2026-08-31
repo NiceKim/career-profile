@@ -27,7 +27,9 @@ function parseTags(raw: FormDataEntryValue | null): string[] {
 type Props = {
   type: ObjectType;
   recentObjects?: ObjectSummary[];
-  onPick: (objectVersionId: string) => void;
+  // Receives the full saved object, not just its id, so callers can update their
+  // display state (body/fields/tags) without a stale copy or a follow-up fetch.
+  onPick: (picked: ObjectSummary) => void;
   triggerLabel?: string;
   editingRootVersionId?: string;
   // Prefills the form from this version's fields/body/tags. Submitting saves a new version
@@ -66,8 +68,8 @@ export function ObjectPickerModal({
     dialogRef.current?.showModal();
   }
 
-  function pick(id: string) {
-    onPick(id);
+  function pick(picked: ObjectSummary) {
+    onPick(picked);
     dialogRef.current?.close();
   }
 
@@ -89,20 +91,26 @@ export function ObjectPickerModal({
             {!prefillFrom && recentObjects.length > 0 && (
               <fieldset>
                 <legend>Recent objects</legend>
-                {recentObjects.map((o) => (
-                  <span key={o.id}>
-                    <button type="button" onClick={() => pick(o.id)}>
-                      {o.body.slice(0, 20)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => o.rootVersionId && openAllVersions(o.rootVersionId)}
-                      aria-label="See all versions"
-                    >
-                      +
-                    </button>
-                  </span>
-                ))}
+                <div className={styles.versionsGrid}>
+                  {recentObjects.map((o) => (
+                    <ObjectVersionChip
+                      key={o.id}
+                      type={type}
+                      version={o}
+                      clampBody
+                      onClick={() => pick(o)}
+                      editTrigger={
+                        <button
+                          type="button"
+                          onClick={() => o.rootVersionId && openAllVersions(o.rootVersionId)}
+                          aria-label="See all versions"
+                        >
+                          +
+                        </button>
+                      }
+                    />
+                  ))}
+                </div>
               </fieldset>
             )}
             <fieldset>
@@ -114,10 +122,10 @@ export function ObjectPickerModal({
                   );
                   const body = String(formData.get('body'));
                   const tags = parseTags(formData.get('tags'));
-                  const { id } = prefillFrom
+                  const saved = prefillFrom
                     ? await editObjectAction(prefillFrom.id, fields, body, tags)
                     : await createObjectAction(type, fields, body, tags);
-                  pick(id);
+                  pick(saved);
                 }}
               >
                 {FIELDS_BY_TYPE[type].map((f) => (
@@ -147,7 +155,7 @@ export function ObjectPickerModal({
                   key={v.id}
                   type={type}
                   version={v}
-                  onClick={editingRootVersionId ? undefined : () => pick(v.id)}
+                  onClick={editingRootVersionId ? undefined : () => pick(v)}
                   editTrigger={<ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" />}
                 />
               ))}

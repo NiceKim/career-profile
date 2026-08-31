@@ -50,6 +50,24 @@
   white-space: pre-wrap;
 }
 
+.bodyClamped {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.expandToggle {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #55524a;
+  font-size: 11px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .tags {
   display: flex;
   flex-wrap: wrap;

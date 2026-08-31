@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ObjectType } from '@/lib/objects/schemas';
 import { FIELDS_BY_TYPE, IDENTITY_FIELD, getIdentityLabel } from '@/lib/objects/fieldConfig';
 import styles from './ObjectVersionChip.module.css';
@@ -29,13 +30,18 @@ export function ObjectVersionChip({
   version,
   onClick,
   editTrigger,
+  clampBody,
 }: {
   type: ObjectType;
   version: Version;
   onClick?: () => void;
   // A small trigger (e.g. an edit-icon ObjectPickerModal) rendered in the chip's corner.
   editTrigger?: React.ReactNode;
+  // Caps the body to a few lines instead of showing it in full — for pickers listing several
+  // objects at once (e.g. ResumeForm's "Recent objects"), where full bodies would run too long.
+  clampBody?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const fields = (version.fields as Record<string, unknown> | null) ?? {};
   const secondaryFields = FIELDS_BY_TYPE[type].filter((f) => f.name !== IDENTITY_FIELD[type]);
   // Date fields (startDate/endDate, issueDate/expiryDate, ...) get their own "from – to" line
@@ -63,7 +69,23 @@ export function ObjectVersionChip({
         ) : null
       )}
       {dateRange && <div className={styles.field}>{dateRange}</div>}
-      {version.body && <div className={styles.body}>{version.body}</div>}
+      {version.body && (
+        <div className={clampBody && !expanded ? `${styles.body} ${styles.bodyClamped}` : styles.body}>
+          {version.body}
+        </div>
+      )}
+      {clampBody && version.body && (
+        <button
+          type="button"
+          className={styles.expandToggle}
+          onClick={(e) => {
+            e.stopPropagation();
+            setExpanded((x) => !x);
+          }}
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
       {version.tags && version.tags.length > 0 && (
         <div className={styles.tags}>
           {version.tags.map((t) => (
