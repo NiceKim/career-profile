@@ -9,6 +9,9 @@ type SectionInput = {
 };
 
 export async function createResumeFromScratch(userId: string, name: string, sections: SectionInput[] = []) {
+  const trimmedName = name.trim();
+  if (!trimmedName) throw new Error('Resume title is required');
+
   const id = randomUUID();
   return prisma.resumeVersion.create({
     data: {
@@ -16,7 +19,7 @@ export async function createResumeFromScratch(userId: string, name: string, sect
       rootVersionId: id,
       parentVersionId: null,
       ownerUserId: userId,
-      name,
+      name: trimmedName,
       sections: {
         create: sections.map((s) => ({ sectionType: s.sectionType, order: s.order })),
       },
@@ -49,6 +52,9 @@ export async function editResume(
   if (!existing) throw new Error('Resume version not found');
   if (existing.ownerUserId !== userId) throw new Error('Not authorized');
 
+  const trimmedName = (name ?? existing.name).trim();
+  if (!trimmedName) throw new Error('Resume title is required');
+
   const id = randomUUID();
   return prisma.resumeVersion.create({
     data: {
@@ -56,7 +62,7 @@ export async function editResume(
       rootVersionId: existing.rootVersionId,
       parentVersionId: existing.parentVersionId,
       ownerUserId: userId,
-      name: name ?? existing.name,
+      name: trimmedName,
       sections: {
         create: sections.map((s) => ({ sectionType: s.sectionType, order: s.order })),
       },
@@ -84,6 +90,9 @@ export async function forkResume(
   if (!source) throw new Error('Resume version not found');
   if (source.ownerUserId !== userId) throw new Error('Not authorized');
 
+  const trimmedName = (newName ?? `Fork of ${source.name}`).trim();
+  if (!trimmedName) throw new Error('Resume title is required');
+
   const id = randomUUID();
   return prisma.resumeVersion.create({
     data: {
@@ -91,7 +100,7 @@ export async function forkResume(
       rootVersionId: id,
       parentVersionId: source.id,
       ownerUserId: userId,
-      name: newName ?? `Fork of ${source.name}`,
+      name: trimmedName,
       sections: {
         create: sections.map((s) => ({ sectionType: s.sectionType, order: s.order })),
       },

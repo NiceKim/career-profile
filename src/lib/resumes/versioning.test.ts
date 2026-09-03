@@ -81,6 +81,24 @@ describe('resume versioning', () => {
     await expect(forkResume(attacker.id, original.id, 'hacked', [])).rejects.toThrow('Not authorized');
   });
 
+  it('rejects creating a resume with an empty or whitespace-only title', async () => {
+    const user = await makeUser();
+    await expect(createResumeFromScratch(user.id, '')).rejects.toThrow('Resume title is required');
+    await expect(createResumeFromScratch(user.id, '   ')).rejects.toThrow('Resume title is required');
+  });
+
+  it('rejects editing a resume title to empty', async () => {
+    const user = await makeUser();
+    const original = await createResumeFromScratch(user.id, 'Original');
+    await expect(editResume(user.id, original.id, '   ', [])).rejects.toThrow('Resume title is required');
+  });
+
+  it('rejects forking a resume with an empty title', async () => {
+    const user = await makeUser();
+    const original = await createResumeFromScratch(user.id, 'Original');
+    await expect(forkResume(user.id, original.id, '  ', [])).rejects.toThrow('Resume title is required');
+  });
+
   it('isHeadVersion reflects recency, not tree position', async () => {
     const user = await makeUser();
     const v1 = await createResumeFromScratch(user.id, 'Original');

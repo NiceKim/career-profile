@@ -115,6 +115,20 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
     );
   }
 
+  // Canonical form: name + ordered objectVersionIds per section. Editing an item's content
+  // yields a new objectVersionId (a new object version), so this also catches content edits,
+  // not just add/remove/reorder.
+  function canonical(n: string, s: typeof sections) {
+    return JSON.stringify({
+      name: n.trim(),
+      sections: s.map((sec) => ({ type: sec.sectionType, items: sec.items.map((it) => it.objectVersionId) })),
+    });
+  }
+
+  const unchanged =
+    mode !== 'create' && canonical(name, sections) === canonical(initialName, initialSections);
+  const hasNoItems = sections.every((s) => s.items.length === 0);
+
   async function handleSubmit() {
     const payload = sections.map((s, i) => ({
       sectionType: s.sectionType,
@@ -200,7 +214,20 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
         ))}
       </select>
 
-      <button type="button" onClick={handleSubmit}>
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={!name.trim() || hasNoItems || unchanged}
+        title={
+          !name.trim()
+            ? 'Resume title is required'
+            : hasNoItems
+              ? 'Add at least one object'
+              : unchanged
+                ? 'No changes to save'
+                : undefined
+        }
+      >
         {mode === 'create' ? 'Done' : mode === 'edit' ? 'Save new version' : 'Save fork'}
       </button>
     </div>
