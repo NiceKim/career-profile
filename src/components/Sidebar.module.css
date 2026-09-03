@@ -1,12 +1,18 @@
 .sidebar {
+  /* Fixed to the viewport (not just sticky) so it never scrolls with the page — AppShell
+     mirrors its width as main's margin-left, since a fixed element no longer reserves
+     its own space in the flex layout. */
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
   background: #faf9f5;
   border-right: 2px solid #1a1a1a;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 9px;
-  padding: 14px 2px;
-  flex-shrink: 0;
+  padding: 14px 8px;
 }
 
 .toggle {
@@ -22,7 +28,6 @@
   display: flex;
   flex-direction: column;
   gap: 9px;
-  align-items: center;
 }
 
 .link,
@@ -30,12 +35,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 90%;
-  height: 22px;
+  width: 100%;
+  padding: 7px 10px;
   border-radius: 5px;
   border: 2px solid #1a1a1a;
   font-size: 12px;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .link {
@@ -53,6 +61,7 @@
 }
 
 .avatar {
+  align-self: flex-end;
   width: 32px;
   height: 32px;
   border-radius: 6px;

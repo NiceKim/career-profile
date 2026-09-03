@@ -1,3 +1,5 @@
+'use client';
+
 import { useState } from 'react';
 import type { ObjectType } from '@/lib/objects/schemas';
 import { FIELDS_BY_TYPE, IDENTITY_FIELD, getIdentityLabel } from '@/lib/objects/fieldConfig';

@@ -1,6 +1,8 @@
 import { getCurrentUserId } from '@/lib/session';
 import { getResumeVersionWithContent } from '@/lib/resumes/queries';
 import { HistoryTab } from './HistoryTab';
+import { ObjectVersionChip } from '@/components/ObjectVersionChip';
+import type { ObjectType } from '@/lib/objects/schemas';
 import Link from 'next/link';
 import styles from './ResumeView.module.css';
 
@@ -52,7 +54,9 @@ export default async function ViewResumePage({
             <h2>{section.sectionType}</h2>
             <ul className={styles.section}>
               {section.items.map((item) => (
-                <li key={item.id}>{item.objectVersion.body}</li>
+                <li key={item.id}>
+                  <ObjectVersionChip type={item.objectVersion.type as ObjectType} version={item.objectVersion} />
+                </li>
               ))}
             </ul>
           </div>
