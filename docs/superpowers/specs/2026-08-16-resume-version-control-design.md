@@ -42,8 +42,8 @@ flowchart LR
 
 Two decisions shape this model, both applied consistently:
 
-1. **No separate "identity" tables.** A `resumes` table and an `objects` table were considered and dropped — each version row carries its own identity via a self-referencing `rootVersionId`, collapsing "identity + history" into one table per concept.
-2. **Object versioning is linear; resume versioning is a tree.** Objects only ever get new versions (edits) under the same `rootVersionId` — no forking at the object level. Resumes fork, so `resume_versions` also needs `parentVersionId` to capture the fork lineage edge, on top of `rootVersionId` for "which resume/tree this belongs to."
+1. **No separate "identity" tables.** A `resumes` table and an `objects` table were considered and dropped — each version row carries its own identity via self-referencing id columns, collapsing "identity + history" into one table per concept.
+2. **Objects have three identity levels; resumes have two.** An object (e.g. "my Google work experience") can have multiple **variations** — tailored rewrites for different scenarios (a backend-flavored write-up vs. a frontend-flavored one) — and each variation has its own **linear** edit history. Objects still never form a parent/child tree (neither across variations nor within one variation's history) — so `object_versions` needs `originVersionId` (never reassigned after the object's true creation — the anchor tying all variations of the same object together) *in addition to* `rootVersionId` (resets when a new variation is forked; scopes one variation's own linear edit history, same resetting rule as resume's `rootVersionId` resetting per tree). Resumes only fork at the tree level, so `resume_versions` needs `parentVersionId` (the fork lineage edge) on top of `rootVersionId` — no third id, since resumes don't have an object-like umbrella above the tree.
 
 ```mermaid
 erDiagram
@@ -72,7 +72,8 @@ erDiagram
     }
     OBJECT_VERSION {
         uuid id
-        uuid rootVersionId "self if this row is the first version"
+        uuid originVersionId "self if this is a new object; the object this variation belongs to, never reassigned"
+        uuid rootVersionId "self if this is a new variation (fork); root of this variation's own linear history"
         uuid ownerUserId
         enum type "WorkExperience|Education|Skills|Summary|Project|Certification|Extracurricular"
         int versionNumber
@@ -105,13 +106,23 @@ erDiagram
 
 **Key semantics:**
 
-- **Editing an object** creates a new `object_version` row: `rootVersionId` unchanged, `versionNumber` = the tree's current highest plus one. Existing resumes keep pointing at whichever object version they already reference. The Object Dashboard lists every version of an object, so every variation stays visible.
+- **Terminology:** an **object** (e.g. "my Google work experience") is the conceptual umbrella, identified by `originVersionId` — never a table of its own. A **variation** is one tailored branch of an object (e.g. a backend-flavored write-up vs. a frontend-flavored one), identified by `rootVersionId`, with its own linear edit history. A **(historic) version** is one row within a variation's history, identified by `id`.
+- **Editing a variation** creates a new `object_version` row: `rootVersionId` and `originVersionId` both unchanged (propagated), `versionNumber` = the variation's current highest plus one. Existing resumes keep pointing at whichever specific version they already reference.
+- **Forking a new variation** (pre-filled from an existing variation's latest content) creates a new `object_version` row that starts a new variation: `rootVersionId` = itself (new), `originVersionId` = the source variation's `originVersionId` (propagated, not reset — so it always traces back to the object's true origin no matter how many variations deep), `versionNumber` = 1.
+- The Object Dashboard groups by `originVersionId` (one card per object), with one sub-card per `rootVersionId` (variation) showing only its latest version — see Dashboards below.
+
+| Entry point | `rootVersionId` | `originVersionId` | initial form content |
+|---|---|---|---|
+| **Create** (new object from scratch) | self (new variation) | self (new object) | empty |
+| **Edit** (within a variation) | source version's `rootVersionId` (unchanged) | source version's `originVersionId` (unchanged) | pre-filled from the version being edited |
+| **New Variation** (fork within an object) | self (new variation) | source variation's `originVersionId` (propagated) | pre-filled from the source variation's latest version |
+
 - **Editing a resume** creates a new `resume_version` row: `rootVersionId` unchanged (same tree), `parentVersionId` unchanged (inherited from the version being edited — a tree's fork origin is fixed at fork time, editing never moves it). A tree's current/"latest" version is whichever version was most recently created.
 - **Forking a resume** creates a new `resume_version` row that starts a **new tree**: `rootVersionId` = itself, `parentVersionId` = the source version (cross-tree pointer, for lineage display only — no merging back).
 - **`resume_version_item` references `resumeVersionId` directly.** `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`); an item's section is its object's `type`, matched at render time. `resume_version_section` holds per-section `order` and can exist with zero items.
 - **`fields` is JSONB**, validated at the application layer by a Zod schema per `type`. Every query pattern in this app fetches by ID or by `ownerUserId`; nothing filters on values inside `fields`, so a GIN/expression index can be added later if that changes.
 - **Profile** (name/email/phone/location/links, shown in a resume's header) is a single live, unversioned row per user — resumes always render the current profile.
-- **Tags** are freeform strings on `object_versions`, scoped per version — different versions of the same object can represent differently-targeted variations (e.g. one phrasing tagged `Backend`, a rewritten phrasing tagged `Frontend`). The object list page fetches every version for a user (`type` is the server-side filter) and applies tag filtering client-side. Existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`).
+- **Tags** are freeform strings on `object_versions`, scoped per version — a lightweight label independent of the object/variation/version structure above (e.g. tagging a variation's latest version `Backend`). The object list page fetches every version for a user (`type` is the server-side filter) and applies tag filtering client-side. Existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`).
 
 ## Core Flows
 
@@ -184,7 +195,7 @@ sequenceDiagram
 **Dashboards** (plain reads, no AI, no sequence diagram needed):
 
 - **Resume Dashboard:** groups `resume_versions` by `rootVersionId` to list distinct resumes; draws fork arrows by following `parentVersionId` links that cross into a different `rootVersionId`.
-- **Object Dashboard:** groups `object_versions` by `rootVersionId`; for each version, joins `resume_version_item → resume_version` (via `resumeVersionId`) to show which resume(s) currently use it. (Tag filtering is client-side on the object list page, not a query concern here.)
+- **Object Dashboard:** groups `object_versions` by `originVersionId` — one card per object. Within it, one sub-card per `rootVersionId` (variation), showing only that variation's latest version, each with **Edit** (new historic version, same `rootVersionId`) and **New Variation** (fork, new `rootVersionId`, same `originVersionId`) actions. Clicking a variation sub-card opens a detail popup with that variation's full history (every version under its `rootVersionId`, oldest-to-newest) and the list of resumes using it — joining `resume_version_item → resume_version` across every version sharing that `rootVersionId`, not just the latest. (Tag filtering is client-side on the object list page, not a query concern here.)
 
 ## AI Feature Details
 
@@ -208,4 +219,4 @@ sequenceDiagram
 
 ## Testing Approach
 
-Implementation follows TDD. Priority coverage: versioning correctness (`rootVersionId`/`parentVersionId` set correctly on edit vs. fork), an ownership-check test per mutation (user A cannot read/write user B's rows), and a schema-validation test for the AI structured output. AI response *quality* is checked manually, since LLM output isn't deterministic.
+Implementation follows TDD. Priority coverage: versioning correctness (`rootVersionId`/`parentVersionId` set correctly on edit vs. fork for resumes; `rootVersionId`/`originVersionId` set correctly on edit vs. new-variation fork for objects), an ownership-check test per mutation (user A cannot read/write user B's rows), and a schema-validation test for the AI structured output. AI response *quality* is checked manually, since LLM output isn't deterministic.
