@@ -51,8 +51,8 @@ erDiagram
     USER ||--o{ OBJECT_VERSION : owns
     USER ||--o{ RESUME_VERSION : owns
     RESUME_VERSION ||--o{ RESUME_VERSION_SECTION : has
-    RESUME_VERSION ||--o{ RESUME_VERSION_ITEM : has
-    RESUME_VERSION_ITEM }o--|| OBJECT_VERSION : references
+    RESUME_VERSION_SECTION ||--o{ SECTION_OBJECT : has
+    SECTION_OBJECT }o--|| OBJECT_VERSION : references
     RESUME_VERSION ||--o{ RESUME_VERSION : parentVersionId
 
     USER {
@@ -96,11 +96,11 @@ erDiagram
         enum sectionType "UNIQUE with resumeVersionId - one section per type per resume"
         int order
     }
-    RESUME_VERSION_ITEM {
+    SECTION_OBJECT {
         uuid id
-        uuid resumeVersionId
+        uuid resumeVersionSectionId "the item's real, FK-enforced section membership — no more type-matching"
         uuid objectVersionId
-        int order
+        int order "UNIQUE with resumeVersionSectionId - no two items in one section share an order"
     }
 ```
 
@@ -119,19 +119,23 @@ erDiagram
 
 - **Editing a resume** creates a new `resume_version` row: `rootVersionId` unchanged (same tree), `parentVersionId` unchanged (inherited from the version being edited — a tree's fork origin is fixed at fork time, editing never moves it). A tree's current/"latest" version is whichever version was most recently created.
 - **Forking a resume** creates a new `resume_version` row that starts a **new tree**: `rootVersionId` = itself, `parentVersionId` = the source version (cross-tree pointer, for lineage display only — no merging back).
-- **`resume_version_item` references `resumeVersionId` directly.** `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`); an item's section is its object's `type`, matched at render time. `resume_version_section` holds per-section `order` and can exist with zero items.
+- **`section_object` references `resumeVersionSectionId` directly** — real FK-enforced section membership, not derived by matching the referenced object's `type` at render time (the earlier design; dropped because it let an item silently belong to no section if its type had no match, with no constraint to catch it). `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`) and can exist with zero items. `section_object` has no direct `resumeVersionId` of its own — the resume it belongs to is only reachable through its section (one hop further than before; negligible at this app's scale, and every existing read already fetched section and item data together).
+- **Write-time validation:** creating/editing/forking a resume rejects the write if any item's `objectVersion.type` doesn't match the `sectionType` of the section it's nested under — the FK makes the membership real, so a mismatch is now a representable (and therefore checked) state, where before it was structurally impossible.
+- **`(resumeVersionSectionId, order)` is `UNIQUE`** on `section_object` — no two items in the same section can share an order value.
 - **`fields` is JSONB**, validated at the application layer by a Zod schema per `type`. Every query pattern in this app fetches by ID or by `ownerUserId`; nothing filters on values inside `fields`, so a GIN/expression index can be added later if that changes.
 - **Profile** (name/email/phone/location/links, shown in a resume's header) is a single live, unversioned row per user — resumes always render the current profile.
 - **Tags** are freeform strings on `object_versions`, scoped per version — a lightweight label independent of the object/variation/version structure above (e.g. tagging a variation's latest version `Backend`). The object list page fetches every version for a user (`type` is the server-side filter) and applies tag filtering client-side. Existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`).
 
 ## Core Flows
 
-**Writing a resume version** — Create, Edit, and Fork are the same underlying write: one `resume_versions` insert + a `resume_version_sections`/`resume_version_items` insert, made only when the user submits — not when they click Create/Edit/Fork. Editing an object's content along the way is a fully separate write that never touches `resume_versions` — existing resumes keep pointing at whichever object version they already reference until the user's resume edit picks up the newer one:
+**Writing a resume version** — Create, Edit, and Fork are the same underlying write: one `resume_versions` insert + a `resume_version_sections`/`section_objects` insert, made only when the user submits — not when they click Create/Edit/Fork.
+
+**Editing or creating an object's content while authoring a resume is staged, not written.** Inside the resume form, adding a new object or editing an item's content only updates local form state (fields/body/tags) — no `object_versions` row exists yet. Only when the user clicks the resume's own Save does the app resolve every staged object change into a real `object_versions` insert (`createObjectVersion`/`editObjectVersion`), *then* insert the `resume_versions`/`resume_version_sections`/`section_objects` row referencing the now-real object version ids. These are two sequential phases, not one transaction (see "Error Handling" below) — but neither runs until the user submits, so navigating away from an in-progress resume edit leaves no trace in `object_versions`. This staging behavior is specific to editing objects *through* the resume form; the standalone Object Dashboard (see Dashboards below) still writes each object edit/fork immediately, since there's no larger "submit" to batch into there.
 
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant App as Next.js Server Action
+    participant App as Next.js (client state + Server Action)
     participant DB as Postgres
 
     opt Edit or Fork
@@ -140,15 +144,15 @@ sequenceDiagram
         App-->>U: Edit form, pre-filled
     end
 
-    opt Update Objects
-        U->>App: Edit object content, click Save
-        App->>DB: INSERT object_versions (rootVersionId unchanged, versionNumber+1)
-        App-->>U: Now viewing new object version
+    opt Stage object changes (any number of times, no DB write yet)
+        U->>App: Add object / edit item content
+        App-->>U: Chip updates from local draft state only
     end
 
     U->>App: Click Save
+    App->>DB: INSERT object_versions for every staged draft (create or edit, resolved to real ids)
     App->>DB: INSERT resume_versions (rootVersionId, parentVersionId)
-    App->>DB: INSERT resume_version_sections + resume_version_items
+    App->>DB: INSERT resume_version_sections + section_objects (referencing the resolved ids)
     DB-->>App: new resume_version.id
     App-->>U: Redirect to the new version's view page
 ```
@@ -195,7 +199,7 @@ sequenceDiagram
 **Dashboards** (plain reads, no AI, no sequence diagram needed):
 
 - **Resume Dashboard:** groups `resume_versions` by `rootVersionId` to list distinct resumes; draws fork arrows by following `parentVersionId` links that cross into a different `rootVersionId`.
-- **Object Dashboard:** groups `object_versions` by `originVersionId` — one card per object. Within it, one sub-card per `rootVersionId` (variation), showing only that variation's latest version, each with **Edit** (new historic version, same `rootVersionId`) and **New Variation** (fork, new `rootVersionId`, same `originVersionId`) actions. Clicking a variation sub-card opens a detail popup with that variation's full history (every version under its `rootVersionId`, oldest-to-newest) and the list of resumes using it — joining `resume_version_item → resume_version` across every version sharing that `rootVersionId`, not just the latest. (Tag filtering is client-side on the object list page, not a query concern here.)
+- **Object Dashboard:** groups `object_versions` by `originVersionId` — one card per object. Within it, one sub-card per `rootVersionId` (variation), showing only that variation's latest version, each with **Edit** (new historic version, same `rootVersionId`) and **New Variation** (fork, new `rootVersionId`, same `originVersionId`) actions. Clicking a variation sub-card opens a detail popup with that variation's full history (every version under its `rootVersionId`, oldest-to-newest) and the list of resumes using it — joining `section_object → resume_version_section → resume_version` across every version sharing that `rootVersionId`, not just the latest. (Tag filtering is client-side on the object list page, not a query concern here.)
 
 ## AI Feature Details
 
@@ -216,6 +220,7 @@ sequenceDiagram
 - **Empty states:** Career Q&A and JD optimization both need a friendly message when the user has zero objects/resumes yet, instead of calling the AI with empty context.
 - **Concurrent saves:** every save is an immutable insert, never an update, so two edits started from the same version simply produce two diverging versions — there's no conflict to detect or lock against; this falls out of the data model.
 - **Field validation:** each object `type`'s Zod schema validates `fields` on write, rejecting malformed data before persistence.
+- **Resume submit is two sequential phases, not one transaction:** resolving staged object drafts (`object_versions` inserts) happens first, then the `resume_versions`/`sections`/`items` insert (itself already atomic as one nested Prisma write). No `$transaction` wraps the two phases together. If an object draft fails validation, submission stops there and the resume is never written — surfaced as an error on that specific item, not a whole-form error. If a later phase fails after some object drafts already resolved, those object versions remain as real, valid, unused rows — not a broken state, since an `object_version` existing without any resume referencing it is already normal (identical to one created directly via the Object Dashboard). Full atomicity was considered and rejected: the data model has no invariant that requires it, and it would require threading a shared Prisma transaction handle across `objects/versioning.ts` and `resumes/versioning.ts`.
 
 ## Testing Approach
 
