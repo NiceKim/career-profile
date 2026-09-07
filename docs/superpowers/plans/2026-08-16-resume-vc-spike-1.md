@@ -19,6 +19,8 @@
 
 ---
 
+
+
 ## File Structure
 
 ```
@@ -90,13 +92,17 @@ test/
 
 ---
 
+
+
 ### Task 1: Project scaffold
 
 **Files:**
+
 - Create: `package.json`, `tsconfig.json`, `next.config.ts`, `vitest.config.ts`, `.env.example`, `.gitignore`
 - Test: `test/scaffold.test.ts`
 
 **Interfaces:**
+
 - Produces: a runnable Next.js app and a working `npm test` command that later tasks build on.
 
 - [x] **Step 1: Scaffold Next.js**
@@ -167,9 +173,12 @@ git commit -m "chore: scaffold Next.js app with Vitest"
 
 ---
 
+
+
 ### Task 2: Prisma schema + migration + test DB helper
 
 **Files:**
+
 - Create: `prisma/schema.prisma`
 - Create: `src/lib/prisma.ts`
 - Create: `test/db.ts`
@@ -177,6 +186,7 @@ git commit -m "chore: scaffold Next.js app with Vitest"
 - Modify: `.env.example` (add `DATABASE_URL`)
 
 **Interfaces:**
+
 - Produces: `prisma` client singleton (`src/lib/prisma.ts` default export), `resetDb()` (`test/db.ts`), and the full data model every later task queries against.
 
 - [x] **Step 1: Write the schema**
@@ -366,13 +376,17 @@ git commit -m "feat: add Prisma schema, client, and test DB helper"
 
 ---
 
+
+
 ### Task 3: Zod field schemas per object type
 
 **Files:**
+
 - Create: `src/lib/objects/schemas.ts`
 - Test: `src/lib/objects/schemas.test.ts`
 
 **Interfaces:**
+
 - Produces: `objectFieldSchemas: Record<ObjectType, z.ZodType>`, `validateObjectFields(type: ObjectType, fields: unknown): Record<string, unknown>` (throws `z.ZodError` on invalid input).
 
 - [x] **Step 1: Write the failing test**
@@ -489,13 +503,17 @@ git commit -m "feat: add per-type Zod schemas for object fields"
 
 ---
 
+
+
 ### Task 4: Object versioning core logic
 
 **Files:**
+
 - Create: `src/lib/objects/versioning.ts`
 - Test: `src/lib/objects/versioning.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prisma` (`src/lib/prisma.ts`), `validateObjectFields` (`src/lib/objects/schemas.ts`)
 - Produces: `createObjectVersion(userId: string, type: ObjectType, fields: unknown, body: string, tags?: string[]): Promise<ObjectVersion>`, `editObjectVersion(userId: string, existingVersionId: string, fields: unknown, body: string, tags?: string[]): Promise<ObjectVersion>`
 
@@ -642,13 +660,17 @@ git commit -m "feat: add object versioning core logic"
 
 ---
 
+
+
 ### Task 5: Object queries
 
 **Files:**
+
 - Create: `src/lib/objects/queries.ts`
 - Test: `src/lib/objects/queries.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prisma`
 - Produces: `listObjectsForUser(userId: string, type?: ObjectType): Promise<ObjectVersion[]>` (every version of every object, newest first; when `type` is given, only that type — tag filtering is applied client-side since the full set is already fetched), `getObjectHistory(userId: string, rootVersionId: string): Promise<ObjectVersion[]>` (all versions, oldest first), `listTagsForUser(userId: string): Promise<string[]>` (distinct tags across all versions, for autocomplete)
 
@@ -766,13 +788,17 @@ git commit -m "feat: add object list and history queries"
 
 ---
 
+
+
 ### Task 6: Password hashing helper
 
 **Files:**
+
 - Create: `src/lib/password.ts`
 - Test: `src/lib/password.test.ts`
 
 **Interfaces:**
+
 - Produces: `hashPassword(plain: string): Promise<string>`, `verifyPassword(plain: string, hash: string): Promise<boolean>`
 
 - [x] **Step 1: Write the failing test**
@@ -829,9 +855,12 @@ git commit -m "feat: add password hashing helpers"
 
 ---
 
+
+
 ### Task 7: Auth.js config + session helper
 
 **Files:**
+
 - Create: `src/lib/auth.ts`
 - Create: `src/app/api/auth/[...nextauth]/route.ts`
 - Create: `src/lib/session.ts`
@@ -839,6 +868,7 @@ git commit -m "feat: add password hashing helpers"
 - Test: `src/lib/session.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prisma`, `verifyPassword` (`src/lib/password.ts`)
 - Produces: `auth()` (next-auth handle), `getCurrentUserId(): Promise<string>` (throws `Error('Not authenticated')` if no session)
 
@@ -960,13 +990,17 @@ git commit -m "feat: add Auth.js credentials config and session helper"
 
 ---
 
+
+
 ### Task 8: Resume versioning core logic
 
 **Files:**
+
 - Create: `src/lib/resumes/versioning.ts`
 - Test: `src/lib/resumes/versioning.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prisma`
 - Produces (all three write exactly once — no separate "create empty, then fill" round trip; the caller passes whatever content the user has built in the form):
   - `createResumeFromScratch(userId: string, name: string, sections?: SectionInput[]): Promise<ResumeVersion>`
@@ -1193,6 +1227,8 @@ export async function forkResume(
 
 - [x] **Step 4: Run test to verify it passes**
 
+
+
 Run: `npm test -- src/lib/resumes/versioning.test.ts`
 Expected: PASS (8 tests)
 
@@ -1205,13 +1241,17 @@ git commit -m "feat: add resume versioning core logic (create, edit, fork)"
 
 ---
 
+
+
 ### Task 9: Resume queries (latest versions, content, forest)
 
 **Files:**
+
 - Create: `src/lib/resumes/queries.ts`
 - Test: `src/lib/resumes/queries.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prisma`
 - Produces:
   - `getLatestVersionsForUser(userId: string): Promise<ResumeVersion[]>` (one head per tree)
@@ -1385,13 +1425,17 @@ git commit -m "feat: add resume latest-version, content, and forest queries"
 
 ---
 
+
+
 ### Task 10: Object Dashboard query (reverse "used in" lookup)
 
 **Files:**
+
 - Create: `src/lib/objects/dashboard.ts`
 - Test: `src/lib/objects/dashboard.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prisma`
 - Produces: `getObjectDashboard(userId: string): Promise<Array<{ rootVersionId: string; type: string; versions: Array<{ id: string; versionNumber: number; body: string; tags: string[]; usedInResumeNames: string[] }> }>>`
 
@@ -1496,13 +1540,17 @@ git commit -m "feat: add object dashboard query with reverse resume lookup"
 
 ---
 
+
+
 ### Task 11: Profile queries and mutation
 
 **Files:**
+
 - Create: `src/lib/profile.ts`
 - Test: `src/lib/profile.test.ts`
 
 **Interfaces:**
+
 - Consumes: `prisma`
 - Produces: `getProfile(userId: string): Promise<Profile | null>`, `upsertProfile(userId: string, data: { fullName: string; email: string; phone: string; location: string; links: Record<string, string> }): Promise<Profile>`
 
@@ -1589,13 +1637,17 @@ git commit -m "feat: add profile query and upsert"
 
 ---
 
+
+
 ### Task 12: Object Server Actions
 
 **Files:**
+
 - Create: `src/app/objects/actions.ts`
 - Test: `src/app/objects/actions.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getCurrentUserId` (`src/lib/session.ts`), `createObjectVersion`/`editObjectVersion` (`src/lib/objects/versioning.ts`)
 - Produces: `createObjectAction(type: ObjectType, fields: unknown, body: string, tags?: string[]): Promise<{ id: string }>`, `editObjectAction(existingVersionId: string, fields: unknown, body: string, tags?: string[]): Promise<{ id: string }>`
 
@@ -1698,13 +1750,17 @@ git commit -m "feat: add object server actions"
 
 ---
 
+
+
 ### Task 13: Resume Server Actions
 
 **Files:**
+
 - Create: `src/app/resumes/actions.ts`
 - Test: `src/app/resumes/actions.test.ts`
 
 **Interfaces:**
+
 - Consumes: `getCurrentUserId`, `createResumeFromScratch`/`editResume`/`forkResume` (`src/lib/resumes/versioning.ts`)
 - Produces (each writes exactly once — `sections` is whatever the caller's form currently holds): `createResumeAction(name: string, sections?: SectionInput[]): Promise<{ id: string }>`, `editResumeAction(existingVersionId: string, name: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`, `forkResumeAction(sourceVersionId: string, newName: string | undefined, sections: SectionInput[]): Promise<{ id: string }>`
 
@@ -1840,14 +1896,18 @@ git commit -m "feat: add resume server actions"
 
 ---
 
+
+
 ### Task 14: Data layer additions for the UI
 
 **Files:**
+
 - Modify: `src/lib/objects/queries.ts` / `src/lib/objects/queries.test.ts` (add `listLatestObjectsForUser`)
 - Modify: `src/lib/resumes/queries.ts` / `src/lib/resumes/queries.test.ts` (add `getResumeTreeHistory`)
 - Modify: `src/app/objects/actions.ts` / `src/app/objects/actions.test.ts` (add `listLatestObjectsAction`, `getObjectHistoryAction`)
 
 **Interfaces:**
+
 - Consumes: `prisma`, `getObjectHistory` (`src/lib/objects/queries.ts`), `getCurrentUserId`
 - Produces:
   - `listLatestObjectsForUser(userId: string, type?: ObjectType): Promise<ObjectVersion[]>` — one row per object (its latest version), optionally filtered by `type`. Powers the Resume Create modal's "recent objects" picker — `listObjectsForUser` (every version) would be far too cluttered for a quick-pick list.
@@ -1975,16 +2035,20 @@ git commit -m "feat: add latest-objects and resume-tree-history queries for the 
 
 ---
 
+
+
 ### Task 15: Auth UI (signup, login)
 
 Unchanged from the original plan — no design exists for these in Figma, built freely. Lives outside `(app)/`, so no sidebar.
 
 **Files:**
+
 - Create: `src/app/signup/page.tsx`
 - Create: `src/app/signup/actions.ts`
 - Create: `src/app/login/page.tsx`
 
 **Interfaces:**
+
 - Consumes: `hashPassword` (`src/lib/password.ts`), `prisma`, `signIn` (`src/lib/auth.ts`)
 - Produces: working `/signup` and `/login` pages.
 
@@ -2067,15 +2131,19 @@ git commit -m "feat: add signup and login pages"
 
 ---
 
+
+
 ### Task 16: Shared app shell (sidebar layout)
 
 Every authenticated page shares one persistent, collapsible sidebar (confirmed against the Figma design): **R** (Resumes), **O** (Objects), **AI** (Career Q&A), plus a user avatar at the bottom that's the entry point to the Profile page. Everything under this shell moves into a `(app)` route group — route groups don't affect the URL, so `/dashboard/resumes` etc. stay exactly where they are. `signup`/`login` (Task 15) stay outside `(app)` — no sidebar, since there's no session yet.
 
 **Files:**
+
 - Create: `src/app/(app)/layout.tsx`
 - Create: `src/components/Sidebar.tsx`
 
 **Interfaces:**
+
 - Consumes: `auth` (`src/lib/auth.ts`)
 - Produces: `AppLayout` — wraps every page under `(app)/`, redirects to `/login` if there's no session, and renders `<Sidebar>` + the page content side by side.
 
@@ -2167,15 +2235,19 @@ git commit -m "feat: add shared sidebar layout for authenticated pages"
 
 ---
 
+
+
 ### Task 17: Profile UI
 
 Not in Figma at all, and not in the original plan's file list either — genuinely new scope, added because the sidebar avatar needs somewhere to go. Reached only via the sidebar avatar (Task 16), not one of R/O/AI.
 
 **Files:**
+
 - Create: `src/app/(app)/profile/page.tsx`
 - Create: `src/app/(app)/profile/actions.ts`
 
 **Interfaces:**
+
 - Consumes: `getCurrentUserId`, `getProfile`/`upsertProfile` (`src/lib/profile.ts`), `signOut` (`next-auth/react`)
 - Produces: working `/profile` page — view/edit the live profile fields, plus log out.
 
@@ -2266,16 +2338,20 @@ git commit -m "feat: add profile page with edit form and logout"
 
 ---
 
+
+
 ### Task 18: Object Dashboard UI (browse, create, edit)
 
 No separate object list page — the old standalone `/objects` page is dropped. The Object Dashboard already shows every version grouped by object with usage info (Task 10); it just needs a type/tag filter and a "+ New Object" entry point to also cover browsing and creation. Editing happens via the same modal used to pick objects for a resume section (Task 19 reuses it), following the Figma 3b design: a "recent objects" picker with a "+" to see every version of one object, plus a "create new" form — direct-edit mode skips the picker and jumps straight to that object's full version list.
 
 **Files:**
+
 - Create: `src/components/ObjectPickerModal.tsx`
 - Create: `src/app/(app)/dashboard/objects/page.tsx`
 - Create: `src/lib/objects/fieldConfig.ts` (added mid-implementation, see Step 2)
 
 **Interfaces:**
+
 - Consumes: `getCurrentUserId`, `getObjectDashboard` (`src/lib/objects/dashboard.ts`), `listTagsForUser` (`src/lib/objects/queries.ts`), `createObjectAction`/`editObjectAction`/`listLatestObjectsAction`/`getObjectHistoryAction` (`src/app/objects/actions.ts`)
 - Produces: `ObjectPickerModal` (shared, reused by Task 19) and working `/dashboard/objects` page (`?type=` and `?tags=` filter client-side, same reasoning as the old list page — the whole set is already fetched).
 
@@ -2432,6 +2508,8 @@ Full round-by-round detail is in commit `4a936d0`'s message, not reproduced here
 
 - [x] **Step 3: Manually verify**
 
+
+
 Verified structurally (compiles, type-checks clean, 46/46 tests pass) and live at every round described in Step 2 above — real objects of multiple types created through the type-aware form, tag filtering, edit-in-place confirmed against the DB, hydration warnings gone from the console. Full click-through is yours to do too; nothing here is taken on faith alone.
 
 - [x] **Step 4: Commit**
@@ -2442,6 +2520,8 @@ git commit -m "feat: add object dashboard with create/edit modal, drop standalon
 ```
 
 ---
+
+
 
 ### Task 19: Resume UI (create, view, edit, fork)
 
@@ -2470,6 +2550,7 @@ type Props = {
 ```
 
 **Files:**
+
 - Modify: `src/components/ObjectPickerModal.tsx` (add an `onOpen` callback prop — Step 1)
 - Create: `src/app/(app)/resumes/ResumeForm.tsx` (shared client form for new/edit/fork)
 - Create: `src/app/(app)/resumes/new/page.tsx`
@@ -2480,10 +2561,11 @@ type Props = {
 - Create: `src/app/(app)/resumes/[id]/ResumeView.module.css` (styled against Figma node `8:62` — outline/filled pill buttons, active-tab bold, dashed section boxes)
 
 **Interfaces:**
+
 - Consumes: `getCurrentUserId`, `getResumeVersionWithContent`, `getResumeTreeHistory` (`src/lib/resumes/queries.ts`), `listLatestObjectsAction` (`src/app/objects/actions.ts`), `createResumeAction`/`editResumeAction`/`forkResumeAction` (`src/app/resumes/actions.ts`), `ObjectPickerModal` (Task 18)
 - Produces: working `/resumes/new`, `/resumes/[id]`, `/resumes/[id]/edit`, `/resumes/[id]/fork` pages, each writing exactly once on submit; an `onOpen` prop added to `ObjectPickerModal`.
 
-- [x] **Step 1: Add an `onOpen` prop to `ObjectPickerModal`**
+- [x] **Step 1: Add an** `onOpen` **prop to** `ObjectPickerModal`
 
 `ResumeForm` (Step 2) needs to lazy-load a section's recent objects only when that section's picker is actually opened, not eagerly for every section on mount. `ObjectPickerModal` has no hook for "the picker just opened" — this step adds one, on its own, before anything is built that depends on it.
 
@@ -2716,6 +2798,8 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
 }
 ```
 
+
+
 `onOpen` is used here as added by Step 1. Separately: `replaceItem` swaps in the new `objectVersionId` but keeps the stale `body`/`fields` until reload, since `onPick` only ever returns an id — decide during implementation whether that needs a follow-up fetch.
 
 - [x] **Step 3: Write the create/edit/fork pages**
@@ -2901,16 +2985,20 @@ git commit -m "feat: add resume create/view/edit/fork pages with picker-based se
 
 ---
 
+
+
 ### Task 20: Resume Dashboard UI
 
 Flat, indented rows (Figma's "1b"). Only *forks* get their own row, nested under whichever tree they branched from, to arbitrary depth; a tree's row always shows its **latest** version only — no per-version rows (that's Task 19's History tab).
 
 **Files:**
+
 - Create: `src/app/(app)/dashboard/resumes/page.tsx`
 - Create: `src/app/(app)/dashboard/resumes/ResumeDashboard.module.css` (styled against Figma node `16:61` — row dividers, pill fork badge, 📄/↳ icons)
 - Modify: `src/lib/resumes/queries.ts` (`getResumeForest` needs to also return each tree's head `createdAt`, so the row can show "edited {date}" — not returned today)
 
 **Interfaces:**
+
 - Consumes: `getCurrentUserId`, `getResumeForest` (`src/lib/resumes/queries.ts`)
 - Produces: working `/dashboard/resumes` page.
 
@@ -2981,19 +3069,23 @@ Committed in `5718eb4` ("feat: add Resume Create/Edit/Fork UI and Resume Dashboa
 
 ---
 
+
+
 ### Task 21: AI context builder
 
 Unchanged from the original plan — pure function, no UI dependency, just renumbered.
 
 **Files:**
+
 - Create: `src/lib/ai/context.ts`
 - Test: `src/lib/ai/context.test.ts`
 
 **Interfaces:**
+
 - Consumes: none (pure function)
 - Produces: `buildCareerContext(objects: Array<{ type: string; body: string; fields: unknown }>, profile: { fullName: string; location: string } | null): string`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 // src/lib/ai/context.test.ts
@@ -3024,12 +3116,12 @@ describe('buildCareerContext', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `npm test -- src/lib/ai/context.test.ts`
 Expected: FAIL with "Cannot find module './context'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/lib/ai/context.ts
@@ -3063,12 +3155,12 @@ export function buildCareerContext(objects: ContextObject[], profile: ContextPro
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `npm test -- src/lib/ai/context.test.ts`
-Expected: PASS (2 tests)
+Expected: PASS (2 tests) — confirmed, and full suite (51/51) also passes.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit** — left for you to commit.
 
 ```bash
 git add -A
@@ -3077,22 +3169,28 @@ git commit -m "feat: add career context builder for AI prompts"
 
 ---
 
+
+
 ### Task 22: Q&A streaming route handler
 
 Unchanged from the original plan — just renumbered.
 
 **Files:**
+
 - Create: `src/app/api/qna/route.ts`
 - Test: `src/app/api/qna/route.test.ts`
 - Modify: `.env.example` (add `OPENAI_API_KEY`)
 
 **Interfaces:**
+
 - Consumes: `getCurrentUserId`, `listObjectsForUser` (`src/lib/objects/queries.ts`), `getProfile` (`src/lib/profile.ts`), `buildCareerContext` (`src/lib/ai/context.ts`), `streamText` from `ai`
 - Produces: `POST` handler at `/api/qna` accepting `{ messages: CoreMessage[] }`, returning a streamed AI response.
 
-- [ ] **Step 1: Write the failing test**
+> **Deviation from the code below, discovered at execution time (2026-09-07):** the AI SDK actually installed (`ai@7.0.77`, `@ai-sdk/openai@4.0.46`) is newer than what this task's code assumed. `streamText(...).toDataStreamResponse()` no longer exists (`toUIMessageStreamResponse()` now); `useChat` (Task 23) no longer ships from `ai/react` (moved to a separate `@ai-sdk/react` package, not yet installed) and now sends `UIMessage[]` (`{ id, role, parts: [...] }`), not flat `{ role, content }` — so the route now converts via `convertToModelMessages()` (now `async`, returning `Promise<ModelMessage[]>`) before calling `streamText`. The code blocks below are updated to match what was actually built and verified; same feature/interfaces, different concrete calls.
 
-Mock `ai`'s `streamText` and the DB/session calls to assert the route assembles context correctly and calls `streamText` with it — no real OpenAI call.
+- [x] **Step 1: Write the failing test**
+
+Mock `ai`'s `streamText` and the DB/session calls to assert the route assembles context correctly and calls `streamText` with it — no real OpenAI call. `convertToModelMessages` is left as the real implementation (via `importOriginal`) so the UI-message-to-model-message conversion is exercised for real, not mocked away.
 
 ```ts
 // src/app/api/qna/route.test.ts
@@ -3108,17 +3206,24 @@ vi.mock('@/lib/profile', () => ({
   getProfile: vi.fn().mockResolvedValue({ fullName: 'Ada Lovelace', location: 'London' }),
 }));
 
-const streamTextMock = vi.fn().mockReturnValue({ toDataStreamResponse: () => new Response('ok') });
-vi.mock('ai', () => ({ streamText: streamTextMock }));
+const { streamTextMock } = vi.hoisted(() => ({
+  streamTextMock: vi.fn().mockReturnValue({ toUIMessageStreamResponse: () => new Response('ok') }),
+}));
+vi.mock('ai', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('ai')>();
+  return { ...actual, streamText: streamTextMock };
+});
 vi.mock('@ai-sdk/openai', () => ({ openai: vi.fn().mockReturnValue('mock-model') }));
 
 import { POST } from './route';
 
 describe('POST /api/qna', () => {
-  it('includes the career context as a system message', async () => {
+  it('includes the career context as a system message and converts UI messages to model messages', async () => {
     const request = new Request('http://localhost/api/qna', {
       method: 'POST',
-      body: JSON.stringify({ messages: [{ role: 'user', content: 'What role fits me?' }] }),
+      body: JSON.stringify({
+        messages: [{ id: '1', role: 'user', parts: [{ type: 'text', text: 'What role fits me?' }] }],
+      }),
     });
 
     await POST(request);
@@ -3126,21 +3231,23 @@ describe('POST /api/qna', () => {
     const call = streamTextMock.mock.calls[0][0];
     expect(call.system).toContain('Ada Lovelace');
     expect(call.system).toContain('Python');
-    expect(call.messages).toEqual([{ role: 'user', content: 'What role fits me?' }]);
+    expect(call.messages).toEqual([
+      { role: 'user', content: [{ type: 'text', text: 'What role fits me?' }] },
+    ]);
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
-Run: `npm test -- src/app/api/qna/route.test.ts`
-Expected: FAIL with "Cannot find module './route'"
+Run: `npx vitest run src/app/api/qna/route.test.ts`
+Expected/actual: FAIL with "Cannot find module './route'"
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 ```ts
 // src/app/api/qna/route.ts
-import { streamText } from 'ai';
+import { streamText, convertToModelMessages, type UIMessage } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { getCurrentUserId } from '@/lib/session';
 import { listObjectsForUser } from '@/lib/objects/queries';
@@ -3149,37 +3256,32 @@ import { buildCareerContext } from '@/lib/ai/context';
 
 export async function POST(request: Request) {
   const userId = await getCurrentUserId();
-  const { messages } = await request.json();
+  const { messages }: { messages: UIMessage[] } = await request.json();
 
-  const [objects, profile] = await Promise.all([
-    listObjectsForUser(userId),
-    getProfile(userId),
-  ]);
+  const [objects, profile] = await Promise.all([listObjectsForUser(userId), getProfile(userId)]);
 
   const context = buildCareerContext(objects, profile);
 
   const result = streamText({
     model: openai('gpt-4o'),
     system: `You are a career advisor. Use the candidate's career context below to answer questions.\n\n${context}`,
-    messages,
+    messages: await convertToModelMessages(messages),
   });
 
-  return result.toDataStreamResponse();
+  return result.toUIMessageStreamResponse();
 }
 ```
 
-- [ ] **Step 4: Add OPENAI_API_KEY to .env.example**
+- [x] **Step 4: Add OPENAI_API_KEY to .env.example**
 
-```bash
-echo 'OPENAI_API_KEY="sk-..."' >> .env.example
-```
+Appended `OPENAI_API_KEY="sk-..."` to `.env.example`.
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
-Run: `npm test -- src/app/api/qna/route.test.ts`
-Expected: PASS (1 test)
+Run: `npx vitest run src/app/api/qna/route.test.ts`
+Expected/actual: PASS (1 test) — full suite also passes (52/52).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit** — left for you to commit.
 
 ```bash
 git add -A
@@ -3188,27 +3290,45 @@ git commit -m "feat: add streaming Q&A route handler"
 
 ---
 
+
+
 ### Task 23: Q&A chat UI
 
 ChatGPT/Claude-style chat page, living under `(app)/` so it gets the sidebar (the "AI" link points here).
 
 **Files:**
+
 - Create: `src/app/(app)/qna/page.tsx`
 
 **Interfaces:**
+
 - Consumes: `useChat` from `ai/react`, `/api/qna` (Task 22)
 - Produces: working `/qna` chat page.
 
 - [ ] **Step 1: Write the chat page**
 
+> **Deviation, discovered at execution time (2026-09-07):** `useChat` moved out of `ai/react` (that subpath no longer exists) into a separate package, `@ai-sdk/react` (installed: `npm install @ai-sdk/react`, resolved `4.0.96`). Its API also changed — no more built-in `input`/`handleInputChange`/`handleSubmit` state; input is managed locally with `useState` and sent via `sendMessage({ text })`. `messages` are `UIMessage[]`, rendered via `.parts` (each `{ type: 'text', text }`) instead of a flat `.content` string. The transport/endpoint is now set via `transport: new DefaultChatTransport({ api: '/api/qna' })` (both from `ai`), not a top-level `api` option. The sidebar already links to `/qna` (`src/components/Sidebar.tsx`) — no navigation change needed.
+
 ```tsx
 // src/app/(app)/qna/page.tsx
 'use client';
 
-import { useChat } from 'ai/react';
+import { useState } from 'react';
+import { useChat } from '@ai-sdk/react';
+import { DefaultChatTransport } from 'ai';
 
 export default function QnaPage() {
-  const { messages, input, handleInputChange, handleSubmit, status } = useChat({ api: '/api/qna' });
+  const [input, setInput] = useState('');
+  const { messages, sendMessage, status } = useChat({
+    transport: new DefaultChatTransport({ api: '/api/qna' }),
+  });
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim()) return;
+    sendMessage({ text: input });
+    setInput('');
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
@@ -3216,18 +3336,20 @@ export default function QnaPage() {
         {messages.length === 0 && <p>Ask anything about your career, based on everything in your objects.</p>}
         {messages.map((m) => (
           <div key={m.id} style={{ textAlign: m.role === 'user' ? 'right' : 'left' }}>
-            <div style={{ display: 'inline-block', borderRadius: 12, padding: '8px 12px' }}>{m.content}</div>
+            <div style={{ display: 'inline-block', borderRadius: 12, padding: '8px 12px' }}>
+              {m.parts.map((part, i) => (part.type === 'text' ? <span key={i}>{part.text}</span> : null))}
+            </div>
           </div>
         ))}
       </div>
       <form onSubmit={handleSubmit} style={{ display: 'flex' }}>
         <input
           value={input}
-          onChange={handleInputChange}
+          onChange={(e) => setInput(e.target.value)}
           placeholder="Ask a career question…"
           style={{ flex: 1 }}
         />
-        <button type="submit" disabled={status === 'streaming'}>
+        <button type="submit" disabled={status === 'streaming' || status === 'submitted'}>
           Send
         </button>
       </form>
@@ -3238,11 +3360,23 @@ export default function QnaPage() {
 
 Message bubbles are role-aligned (right for user, left for assistant) with no further styling library — matches the rest of the app's plain-CSS approach, just enough structure to read as a chat UI rather than a bare list.
 
-- [ ] **Step 2: Manually verify**
+- [x] **Step 1: Write the chat page** — done, above. No test file (consistent with other client components in this codebase, e.g. `ObjectPickerModal`/`ResumeForm` — no existing test file either); full suite, `tsc --noEmit`, and `eslint` all clean against the new files.
+
+- [x] **Error handling gap found and fixed (2026-09-07):** the spec's Error Handling section requires "a retryable error instead of a blank state" on AI failures, which this page didn't have — an invalid/missing `OPENAI_API_KEY` failed silently (no message, button just re-enabled). Traced why: `@ai-sdk/openai` only reads the key lazily, inside a closure invoked when the actual OpenAI request is dispatched — deep inside `streamText`'s internal async work, *after* `toUIMessageStreamResponse()` has already returned the `Response`. A `try/catch` around the route handler's body cannot catch this. Fixed with the SDK's actual mechanism for it:
+  - `src/app/api/qna/route.ts`: `toUIMessageStreamResponse({ onError })` — logs the real error server-side, returns a fixed generic string to the client (the SDK does not forward raw error messages by default; this makes that policy explicit and tested).
+  - `src/app/(app)/qna/page.tsx`: destructures `error`/`regenerate` from `useChat`, renders the sanitized message with a Retry button (`regenerate()`) instead of nothing.
+  - `src/app/api/qna/route.test.ts`: new test asserts `onError`'s returned string never contains the raw error text (e.g. `OPENAI_API_KEY`) — full suite now 53/53.
+
+- [x] **Further refinement (2026-09-07):** distinguish an API-key problem from any other failure, so the message is specific *and* so a later "let the user supply their own API key" feature has a stable signal to hook into (rather than treating every failure as generic).
+  - `route.ts`'s `onError` now returns one of two fixed codes instead of one fixed sentence: `'invalid_api_key'` when the error is `LoadAPIKeyError` (key missing entirely — checked before any request is sent) or `APICallError` with `statusCode === 401` (key present but rejected by OpenAI itself), otherwise `'unknown'`. Still never forwards the raw error.
+  - `qna/page.tsx` maps those codes to display text via `ERROR_MESSAGES`, rather than rendering `error.message` directly (which is now a code, not user-facing text).
+  - Three tests replace the earlier single "doesn't leak" test, covering: missing key → `invalid_api_key`, 401 from provider → `invalid_api_key`, anything else → `unknown` without leaking details. Full suite now 55/55.
+
+- [x] **Step 2: Manually verify** — not yet done; needs a real `OPENAI_API_KEY`.
 
 Set a real `OPENAI_API_KEY` in `.env`, run `npm run dev`, log in, add a couple of objects at `/dashboard/objects`, visit `/qna` (via the sidebar "AI" link), ask a question, and confirm a streamed response references the objects you added.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit** — left for you to commit.
 
 ```bash
 git add -A
@@ -3250,6 +3384,8 @@ git commit -m "feat: add Career Q&A chat page"
 ```
 
 ---
+
+
 
 ## Self-Review Notes (UI phase, updated 2026-08-23)
 
@@ -3259,3 +3395,4 @@ git commit -m "feat: add Career Q&A chat page"
 - **Resume Screen tabs:** Resume / History / Chat, not Resume / History / Diff. History is real (Task 14's `getResumeTreeHistory`). Diff was explicitly deferred past Spike 1; a new "Chat" idea (per-resume-scoped Q&A, distinct from the global Q&A which uses every object) replaced Diff's tab slot but is a disabled stub for Spike 1 — no function behind it.
 - **New Profile page (Task 17):** not in the original plan's file list, not in Figma — added because the sidebar avatar (Task 16) needs a destination, and `getProfile`/`upsertProfile` (Task 11) had no UI consumer at all until now.
 - **Known rough edges, since resolved:** `ObjectPickerModal`'s `onOpen` prop is now fully specified in Task 19 (was a vague TODO); the Resume Dashboard's fork nesting (Task 20) now recurses to arbitrary depth (was one level only). Still open: `onPick` handlers calling `redirect()` in these sketches are placeholders for what's likely `router.refresh()` in practice, same as Task 18 hit for real.
+
