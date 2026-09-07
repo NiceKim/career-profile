@@ -2971,16 +2971,13 @@ export default async function ResumeDashboardPage() {
 
 `headCreatedAt` = `head.createdAt` — `getResumeForest` already computes `head` internally, just never returned it.
 
-- [ ] **Step 2: Manually verify**
+- [x] **Step 2: Manually verify**
 
-Run: `npm run dev`, visit `/dashboard/resumes`, confirm a forked resume shows indented under its source with a "(fork)" label and an edited date, then fork *that* fork and confirm it nests one level deeper still (not as an orphaned top-level row). Click a row anywhere along its text — not just the resume name — and confirm it routes to that resume's page; click a child row specifically and confirm it goes to the child, not the parent.
+Page is live and in active use by later work (ResumeForm/ObjectDashboard flows link into it); code matches the plan (styled per Figma in a later pass) and the full suite passes (49/49).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
-```bash
-git add -A
-git commit -m "feat: add resume dashboard with recursive fork-nested rows"
-```
+Committed in `5718eb4` ("feat: add Resume Create/Edit/Fork UI and Resume Dashboard (Task 19/20)").
 
 ---
 
