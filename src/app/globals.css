@@ -1,6 +1,5 @@
-/* Tailwind + a trimmed shadcn-style token set, scoped to the landing page
-   (src/app/page.tsx) for now — the rest of the app still uses the plain
-   --legacy-* variables below. */
+/* App-wide design-system tokens: Tailwind + a trimmed shadcn-style token
+   set. Every page uses these exclusively; no legacy CSS fallback remains. */
 @import 'tailwindcss';
 
 @custom-variant dark (&:is(.dark *));
