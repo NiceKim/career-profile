@@ -3,6 +3,9 @@
 import { useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 // Matches the codes route.ts's onError returns — never render error.message directly, it's a
 // fixed code, not user-facing text. 'invalid_api_key' is its own case (not just "unknown") so a
@@ -26,35 +29,37 @@ export default function QnaPage() {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        {messages.length === 0 && <p>Ask anything about your career, based on everything in your objects.</p>}
+    <div className="flex h-[calc(100vh-3rem)] flex-col">
+      <div className="flex-1 space-y-3 overflow-y-auto">
+        {messages.length === 0 && (
+          <p className="text-sm text-muted-foreground">Ask anything about your career, based on everything in your objects.</p>
+        )}
         {messages.map((m) => (
-          <div key={m.id} style={{ textAlign: m.role === 'user' ? 'right' : 'left' }}>
-            <div style={{ display: 'inline-block', borderRadius: 12, padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
+          <div key={m.id} className={cn('flex', m.role === 'user' ? 'justify-end' : 'justify-start')}>
+            <div
+              className={cn(
+                'max-w-[80%] whitespace-pre-wrap rounded-xl px-3 py-2 text-sm',
+                m.role === 'user' ? 'bg-[#2da44e] text-white' : 'bg-muted text-foreground'
+              )}
+            >
               {m.parts.map((part, i) => (part.type === 'text' ? <span key={i}>{part.text}</span> : null))}
             </div>
           </div>
         ))}
       </div>
       {error && (
-        <p style={{ color: 'crimson' }}>
-          {ERROR_MESSAGES[error.message] ?? ERROR_MESSAGES.unknown}{' '}
-          <button type="button" onClick={() => regenerate()}>
+        <p className="mt-2 flex items-center gap-2 text-sm text-red-600">
+          {ERROR_MESSAGES[error.message] ?? ERROR_MESSAGES.unknown}
+          <Button type="button" variant="link" onClick={() => regenerate()}>
             Retry
-          </button>
+          </Button>
         </p>
       )}
-      <form onSubmit={handleSubmit} style={{ display: 'flex' }}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask a career question…"
-          style={{ flex: 1 }}
-        />
-        <button type="submit" disabled={status === 'streaming' || status === 'submitted'}>
+      <form onSubmit={handleSubmit} className="mt-3 flex gap-2">
+        <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a career question…" className="flex-1" />
+        <Button type="submit" disabled={status === 'streaming' || status === 'submitted'}>
           Send
-        </button>
+        </Button>
       </form>
     </div>
   );
