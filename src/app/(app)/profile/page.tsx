@@ -12,8 +12,8 @@ export default async function ProfilePage() {
 
   return (
     <div className="mx-auto flex max-w-lg flex-col gap-6">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Profile</h1>
-      <form action={updateProfileAction} className="flex flex-col gap-4">
+      <h1 className="text-2xl font-semibold tracking-tight text-foreground mb-0">Profile</h1>
+      <form action={updateProfileAction} className="flex flex-col gap-4 max-w-none mb-0">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="fullName">Full name</Label>
           <Input id="fullName" name="fullName" defaultValue={profile?.fullName} required />

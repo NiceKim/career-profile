@@ -55,7 +55,7 @@ export default function QnaPage() {
           </Button>
         </p>
       )}
-      <form onSubmit={handleSubmit} className="mt-3 flex gap-2">
+      <form onSubmit={handleSubmit} className="mt-3 flex flex-row gap-2 max-w-none mb-0">
         <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask a career question…" className="flex-1" />
         <Button type="submit" disabled={status === 'streaming' || status === 'submitted'}>
           Send
