@@ -7,7 +7,9 @@ import { ObjectPickerModal } from '@/components/ObjectPickerModal';
 import { ObjectVersionChip } from '@/components/ObjectVersionChip';
 import { listLatestObjectsAction } from '@/app/objects/actions';
 import type { ObjectType } from '@/lib/objects/schemas';
-import styles from './ResumeForm.module.css';
+import { ArrowDown, ArrowUp, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 const TYPES: ObjectType[] = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY', 'PROJECT', 'CERTIFICATION', 'EXTRACURRICULAR'];
 
@@ -147,47 +149,55 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
   }
 
   return (
-    <div>
-      {versionInfo && <p>{versionInfo}</p>}
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Resume name" required />
+    <div className="flex flex-col gap-6">
+      {versionInfo && <p className="text-sm text-muted-foreground">{versionInfo}</p>}
+      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Resume name" required className="max-w-md" />
 
       {sections.map((section, index) => (
-        <fieldset key={section.sectionType} className={styles.section}>
-          <legend>
+        <fieldset key={section.sectionType} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">
+          <legend className="flex items-center gap-2 px-1 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">
             {section.sectionType}
-            <button type="button" onClick={() => moveSection(index, -1)} disabled={index === 0} aria-label="Move up">
-              ↑
-            </button>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => moveSection(index, -1)}
+              disabled={index === 0}
+              aria-label="Move up"
+            >
+              <ArrowUp className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
               onClick={() => moveSection(index, 1)}
               disabled={index === sections.length - 1}
               aria-label="Move down"
             >
-              ↓
-            </button>
-            <button type="button" onClick={() => removeSection(index)} aria-label="Delete section">
-              ✕
-            </button>
+              <ArrowDown className="size-3.5" />
+            </Button>
+            <Button type="button" variant="ghost" size="icon" onClick={() => removeSection(index)} aria-label="Delete section">
+              <X className="size-3.5" />
+            </Button>
           </legend>
-          <ul>
+          <div className="grid grid-cols-2 gap-3">
             {section.items.map((item) => (
-              <li key={item.objectVersionId}>
-                <ObjectVersionChip
-                  type={section.sectionType}
-                  version={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags }}
-                  editTrigger={
-                    <ObjectPickerModal
-                      type={section.sectionType}
-                      prefillFrom={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
-                      onPick={(picked) => replaceItem(section.sectionType, item.objectVersionId, picked)}
-                      triggerLabel="Edit"
-                    />
-                  }
-                />
-              </li>
+              <ObjectVersionChip
+                key={item.objectVersionId}
+                type={section.sectionType}
+                version={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags }}
+                editTrigger={
+                  <ObjectPickerModal
+                    type={section.sectionType}
+                    prefillFrom={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
+                    onPick={(picked) => replaceItem(section.sectionType, item.objectVersionId, picked)}
+                    triggerLabel="✎"
+                  />
+                }
+              />
             ))}
-          </ul>
+          </div>
           <ObjectPickerModal
             type={section.sectionType}
             recentObjects={(recent[section.sectionType] ?? []).map((r) => ({
@@ -205,7 +215,11 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
         </fieldset>
       ))}
 
-      <select onChange={(e) => e.target.value && addSectionType(e.target.value as ObjectType)} value="">
+      <select
+        onChange={(e) => e.target.value && addSectionType(e.target.value as ObjectType)}
+        value=""
+        className="h-9 max-w-xs rounded-md border border-border bg-background px-3 py-0 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
         <option value="">+ Add Section</option>
         {TYPES.filter((t) => !sections.some((s) => s.sectionType === t)).map((t) => (
           <option key={t} value={t}>
@@ -214,10 +228,11 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
         ))}
       </select>
 
-      <button
+      <Button
         type="button"
         onClick={handleSubmit}
         disabled={!name.trim() || hasNoItems || unchanged}
+        className="self-start"
         title={
           !name.trim()
             ? 'Resume title is required'
@@ -229,7 +244,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
         }
       >
         {mode === 'create' ? 'Done' : mode === 'edit' ? 'Save new version' : 'Save fork'}
-      </button>
+      </Button>
     </div>
   );
 }
