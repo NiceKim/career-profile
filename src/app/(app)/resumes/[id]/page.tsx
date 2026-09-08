@@ -4,7 +4,8 @@ import { HistoryTab } from './HistoryTab';
 import { ObjectVersionChip } from '@/components/ObjectVersionChip';
 import type { ObjectType } from '@/lib/objects/schemas';
 import Link from 'next/link';
-import styles from './ResumeView.module.css';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 export default async function ViewResumePage({
   params,
@@ -20,45 +21,47 @@ export default async function ViewResumePage({
   const tab = tabParam ?? 'resume';
 
   return (
-    <div>
-      <div className={styles.header}>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1>{resume.name}</h1>
-          <p className={styles.meta}>edited {resume.createdAt.toISOString().slice(0, 10)}</p>
+          <h1 className="mb-0 text-2xl font-semibold tracking-tight text-foreground">{resume.name}</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">edited {resume.createdAt.toISOString().slice(0, 10)}</p>
         </div>
-        <div className={styles.actions}>
-          <Link href={`/resumes/${resume.id}/fork`} className={styles.buttonOutline}>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="secondary" render={<Link href={`/resumes/${resume.id}/fork`} />}>
             Fork
-          </Link>
-          <Link href={`/resumes/${resume.id}/edit`} className={styles.buttonPrimary}>
-            Edit
-          </Link>
+          </Button>
+          <Button render={<Link href={`/resumes/${resume.id}/edit`} />}>Edit</Button>
         </div>
       </div>
 
-      <nav className={styles.tabs}>
-        <Link href={`/resumes/${resume.id}?tab=resume`} className={tab === 'resume' ? styles.tabActive : styles.tab}>
+      <nav className="mb-0 flex gap-5 border-b border-border pb-2 text-sm">
+        <Link
+          href={`/resumes/${resume.id}?tab=resume`}
+          className={cn('transition-colors', tab === 'resume' ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground')}
+        >
           Resume
         </Link>
-        <Link href={`/resumes/${resume.id}?tab=history`} className={tab === 'history' ? styles.tabActive : styles.tab}>
+        <Link
+          href={`/resumes/${resume.id}?tab=history`}
+          className={cn('transition-colors', tab === 'history' ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground')}
+        >
           History
         </Link>
-        <span className={styles.tab} title="Coming later — per-resume AI chat, not in Spike 1">
+        <span className="text-muted-foreground" title="Coming later — per-resume AI chat, not in Spike 1">
           Chat
         </span>
       </nav>
 
       {tab === 'resume' &&
         resume.sections.map((section) => (
-          <div key={section.id}>
-            <h2>{section.sectionType}</h2>
-            <ul className={styles.section}>
+          <div key={section.id} className="flex flex-col gap-2">
+            <h2 className="my-0 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">{section.sectionType}</h2>
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-dashed border-border p-3">
               {section.items.map((item) => (
-                <li key={item.id}>
-                  <ObjectVersionChip type={item.objectVersion.type as ObjectType} version={item.objectVersion} />
-                </li>
+                <ObjectVersionChip key={item.id} type={item.objectVersion.type as ObjectType} version={item.objectVersion} />
               ))}
-            </ul>
+            </div>
           </div>
         ))}
 
