@@ -1,11 +1,16 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { Pencil, Plus } from 'lucide-react';
 import { createObjectAction, editObjectAction, getObjectHistoryAction } from '@/app/objects/actions';
 import type { ObjectType } from '@/lib/objects/schemas';
 import { FIELDS_BY_TYPE } from '@/lib/objects/fieldConfig';
 import { ObjectVersionChip } from './ObjectVersionChip';
-import styles from './ObjectPickerModal.module.css';
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 type ObjectSummary = {
   id: string;
@@ -49,7 +54,7 @@ export function ObjectPickerModal({
   prefillFrom,
   onOpen,
 }: Props) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const [open, setOpen] = useState(false);
   const [view, setView] = useState<'recent' | 'allVersions'>('recent');
   const [allVersions, setAllVersions] = useState<ObjectSummary[]>([]);
 
@@ -58,40 +63,48 @@ export function ObjectPickerModal({
     setView('allVersions');
   }
 
-  function open() {
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) return;
     if (editingRootVersionId) {
       openAllVersions(editingRootVersionId);
     } else {
       setView('recent');
       onOpen?.();
     }
-    dialogRef.current?.showModal();
   }
 
   function pick(picked: ObjectSummary) {
     onPick(picked);
-    dialogRef.current?.close();
+    setOpen(false);
   }
 
   const prefillFields = (prefillFrom?.fields as Record<string, unknown> | undefined) ?? {};
+  const isIconTrigger = triggerLabel.length <= 2;
 
   return (
-    <>
-      <button type="button" onClick={open}>
-        {triggerLabel}
-      </button>
-      <dialog ref={dialogRef}>
-        <button type="button" onClick={() => dialogRef.current?.close()}>
-          ✕
-        </button>
-
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger
+        render={
+          <Button type="button" variant={isIconTrigger ? 'ghost' : 'secondary'} size={isIconTrigger ? 'icon' : 'sm'}>
+            {triggerLabel === '✎' ? <Pencil className="size-3.5" /> : triggerLabel === '+ Object' ? (
+              <>
+                <Plus className="size-3.5" /> Object
+              </>
+            ) : (
+              triggerLabel
+            )}
+          </Button>
+        }
+      />
+      <DialogContent>
         {view === 'recent' && (
           <>
-            <h2>{prefillFrom ? `Edit ${type}` : `Add Object — ${type}`}</h2>
+            <DialogTitle>{prefillFrom ? `Edit ${type}` : `Add Object — ${type}`}</DialogTitle>
             {!prefillFrom && recentObjects.length > 0 && (
-              <fieldset>
-                <legend>Recent objects</legend>
-                <div className={styles.versionsGrid}>
+              <fieldset className="mt-4 flex flex-col gap-2 rounded-none border-0 p-0">
+                <legend className="mb-1 p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent objects</legend>
+                <div className="flex flex-wrap gap-2">
                   {recentObjects.map((o) => (
                     <ObjectVersionChip
                       key={o.id}
@@ -100,22 +113,27 @@ export function ObjectPickerModal({
                       clampBody
                       onClick={() => pick(o)}
                       editTrigger={
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="icon"
                           onClick={() => o.rootVersionId && openAllVersions(o.rootVersionId)}
                           aria-label="See all versions"
                         >
-                          +
-                        </button>
+                          <Plus className="size-3.5" />
+                        </Button>
                       }
                     />
                   ))}
                 </div>
               </fieldset>
             )}
-            <fieldset>
-              <legend>{prefillFrom ? 'Edit fields, then save' : 'or create new'}</legend>
+            <fieldset className="mt-4 flex flex-col gap-3 rounded-none border-0 p-0">
+              <legend className="mb-1 p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {prefillFrom ? 'Edit fields, then save' : 'or create new'}
+              </legend>
               <form
+                className="flex max-w-none flex-col gap-3 mb-0"
                 action={async (formData) => {
                   const fields = Object.fromEntries(
                     FIELDS_BY_TYPE[type].map((f) => [f.name, String(formData.get(f.name) ?? '')])
@@ -129,18 +147,28 @@ export function ObjectPickerModal({
                 }}
               >
                 {FIELDS_BY_TYPE[type].map((f) => (
-                  <input
-                    key={f.name}
-                    name={f.name}
-                    type={f.type ?? 'text'}
-                    placeholder={f.label}
-                    required={f.required}
-                    defaultValue={String(prefillFields[f.name] ?? '')}
-                  />
+                  <div key={f.name} className="flex flex-col gap-1">
+                    <Label htmlFor={f.name}>{f.label}</Label>
+                    <Input
+                      id={f.name}
+                      name={f.name}
+                      type={f.type ?? 'text'}
+                      required={f.required}
+                      defaultValue={String(prefillFields[f.name] ?? '')}
+                    />
+                  </div>
                 ))}
-                <textarea name="body" placeholder="Markdown content" required defaultValue={prefillFrom?.body ?? ''} />
-                <input name="tags" placeholder="Tags, comma-separated" defaultValue={prefillFrom?.tags?.join(', ') ?? ''} />
-                <button type="submit">{prefillFrom ? 'Save new version' : 'Create'}</button>
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="body">Markdown content</Label>
+                  <Textarea id="body" name="body" required defaultValue={prefillFrom?.body ?? ''} />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="tags">Tags, comma-separated</Label>
+                  <Input id="tags" name="tags" defaultValue={prefillFrom?.tags?.join(', ') ?? ''} />
+                </div>
+                <Button type="submit" className="mt-1 self-start">
+                  {prefillFrom ? 'Save new version' : 'Create'}
+                </Button>
               </form>
             </fieldset>
           </>
@@ -148,8 +176,8 @@ export function ObjectPickerModal({
 
         {view === 'allVersions' && (
           <>
-            <h2>All versions</h2>
-            <div className={styles.versionsGrid}>
+            <DialogTitle>All versions</DialogTitle>
+            <div className="mt-4 flex flex-wrap gap-2">
               {[...allVersions].reverse().map((v) => (
                 <ObjectVersionChip
                   key={v.id}
@@ -161,13 +189,13 @@ export function ObjectPickerModal({
               ))}
             </div>
             {!editingRootVersionId && (
-              <button type="button" onClick={() => setView('recent')}>
+              <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={() => setView('recent')}>
                 ← Back
-              </button>
+              </Button>
             )}
           </>
         )}
-      </dialog>
-    </>
+      </DialogContent>
+    </Dialog>
   );
 }

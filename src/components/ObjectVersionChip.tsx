@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import type { ObjectType } from '@/lib/objects/schemas';
 import { FIELDS_BY_TYPE, IDENTITY_FIELD, getIdentityLabel } from '@/lib/objects/fieldConfig';
-import styles from './ObjectVersionChip.module.css';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -62,63 +65,62 @@ export function ObjectVersionChip({
 
   const content = (
     <>
-      <div className={styles.title}>{getIdentityLabel(type, version.fields)}</div>
+      <div className="w-full truncate text-sm font-semibold text-foreground">{getIdentityLabel(type, version.fields)}</div>
       {otherFields.slice(0, 2).map((f) =>
         fields[f.name] ? (
-          <div key={f.name} className={styles.field}>
+          <div key={f.name} className="w-full truncate text-sm text-muted-foreground">
             {String(fields[f.name])}
           </div>
         ) : null
       )}
-      {dateRange && <div className={styles.field}>{dateRange}</div>}
+      {dateRange && <div className="w-full truncate text-sm text-muted-foreground">{dateRange}</div>}
       {version.body && (
-        <div className={clampBody && !expanded ? `${styles.body} ${styles.bodyClamped}` : styles.body}>
+        <div className={cn('whitespace-pre-wrap text-sm text-foreground', clampBody && !expanded && 'line-clamp-3')}>
           {version.body}
         </div>
       )}
       {clampBody && version.body && (
-        <button
+        <Button
           type="button"
-          className={styles.expandToggle}
+          variant="link"
+          size="sm"
+          className="h-auto self-start p-0 text-xs text-muted-foreground"
           onClick={(e) => {
             e.stopPropagation();
             setExpanded((x) => !x);
           }}
         >
           {expanded ? 'Show less' : 'Show more'}
-        </button>
+        </Button>
       )}
       {version.tags && version.tags.length > 0 && (
-        <div className={styles.tags}>
+        <div className="flex flex-wrap gap-1">
           {version.tags.map((t) => (
-            <span key={t} className={styles.tag}>
-              {t}
-            </span>
+            <Badge key={t}>{t}</Badge>
           ))}
         </div>
       )}
       {version.createdAt && (
-        <div className={styles.date}>{new Date(version.createdAt).toISOString().slice(0, 10)}</div>
+        <div className="mt-0.5 text-[10px] text-muted-foreground">{new Date(version.createdAt).toISOString().slice(0, 10)}</div>
       )}
     </>
   );
 
   return (
-    <div
-      className={styles.chip}
+    <Card
       title={title}
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => (e.key === 'Enter' || e.key === ' ') && onClick() : undefined}
-      style={onClick ? { cursor: 'pointer' } : undefined}
+      className={cn('relative flex w-full flex-col gap-1 p-3.5 text-left text-sm', onClick && 'cursor-pointer hover:border-[#2da44e]/40')}
     >
       {editTrigger && (
-        <div className={styles.editTrigger} onClick={(e) => e.stopPropagation()}>
+        <div className="absolute top-2 right-2" onClick={(e) => e.stopPropagation()}>
           {editTrigger}
         </div>
       )}
       {content}
-    </div>
+    </Card>
   );
 }
