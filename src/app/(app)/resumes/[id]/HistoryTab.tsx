@@ -16,7 +16,7 @@ export async function HistoryTab({
   return (
     <ul className="flex flex-col gap-1">
       {history.map((v, i) => (
-        <li key={v.id}>
+        <li key={v.id} className="mb-0">
           <Link
             href={`/resumes/${v.id}`}
             className={cn(
