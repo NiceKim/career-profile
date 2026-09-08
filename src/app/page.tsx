@@ -44,10 +44,7 @@ export default function Page() {
   const [dark, setDark] = useState(false);
 
   return (
-    // -m-[1.5rem] cancels the global `body { padding: 1.5rem }` (globals.css)
-    // so this page's full-width bands reach the viewport edge like the rest
-    // of its sections; font-sans overrides the app-wide Patrick Hand font.
-    <main className={`-m-[1.5rem] min-h-screen font-sans ${dark ? 'dark bg-background text-foreground' : 'bg-background text-foreground'}`}>
+    <main className={`min-h-screen font-sans ${dark ? 'dark bg-background text-foreground' : 'bg-background text-foreground'}`}>
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-[radial-gradient(ellipse_at_top,rgba(46,160,67,0.12),transparent_62%)] dark:bg-[radial-gradient(ellipse_at_top,rgba(46,160,67,0.18),transparent_62%)]" />
         <nav className="relative mx-auto flex max-w-6xl items-center justify-between px-5 py-5 sm:px-8 lg:px-10">

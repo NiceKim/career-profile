@@ -7,8 +7,10 @@
 
 @theme inline {
   --color-border: var(--border);
+  --color-ring: var(--ring);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
+  --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
@@ -18,18 +20,22 @@
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.556 0 0);
   --border: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
 }
 
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
   --border: oklch(1 0 0 / 10%);
+  --ring: oklch(0.556 0 0);
 }
 
 :root {
@@ -85,10 +91,6 @@ a {
    black borders, rounded pill controls, orange-red accent) — referenced,
    not pixel-copied. No design system, just shared element-level styling
    so every page (present and future) gets it automatically. */
-
-body {
-  padding: 1.5rem;
-}
 
 h1 {
   margin-bottom: 1rem;
