@@ -50,7 +50,7 @@ export function ObjectDashboardClient({
 
   return (
     <div className="flex flex-col gap-8">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">Objects</h1>
+      <h1 className="mb-0 text-2xl font-semibold tracking-tight text-foreground">Objects</h1>
 
       <form className="flex max-w-none flex-row gap-2 mb-0">
         <Input name="tags" defaultValue={searchTags ?? ''} placeholder="Tags, comma-separated" list="known-tags" className="max-w-xs" />
@@ -69,7 +69,7 @@ export function ObjectDashboardClient({
         return (
           <section key={type} className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">{type}</h2>
+              <h2 className="my-0 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">{type}</h2>
               <ObjectPickerModal type={type} onPick={refresh} triggerLabel={`+ New ${type}`} />
             </div>
             <div className="flex flex-col gap-4">
