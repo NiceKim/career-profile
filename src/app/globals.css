@@ -1,10 +1,52 @@
-:root {
-  --background: #faf9f5;
-  --foreground: #1a1a1a;
-  --accent: #e0503a;
-  --accent-border: #8a2f1f;
-  --border: #1a1a1a;
+/* Tailwind + a trimmed shadcn-style token set, scoped to the landing page
+   (src/app/page.tsx) for now — the rest of the app still uses the plain
+   --legacy-* variables below. */
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-border: var(--border);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
 }
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --border: oklch(0.922 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 10%);
+}
+
+:root {
+  --legacy-background: #faf9f5;
+  --legacy-foreground: #1a1a1a;
+  --legacy-accent: #e0503a;
+  --legacy-accent-border: #8a2f1f;
+  --legacy-border: #1a1a1a;
+}
+
+/* Wrapped in Tailwind's `base` layer (not left unlayered) so Tailwind
+   utility classes — which are always layered — can still override these
+   element defaults on pages that use them (e.g. the landing page). Cascade
+   layers give unlayered CSS unconditional priority over any layered CSS,
+   regardless of specificity, so leaving this unlayered would make every
+   Tailwind utility on <h1>/<h2>/<nav>/<button>/<a>/* lose unconditionally. */
+@layer base {
 
 html {
   height: 100%;
@@ -21,8 +63,8 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
+  color: var(--legacy-foreground);
+  background: var(--legacy-background);
   font-family: var(--font-patrick-hand), "Comic Sans MS", cursive, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -73,7 +115,7 @@ select {
   font: inherit;
   color: inherit;
   background: #fff;
-  border: 2px solid var(--border);
+  border: 2px solid var(--legacy-border);
   border-radius: 6px;
 }
 
@@ -86,9 +128,9 @@ button {
   padding: 0.5rem 1.1rem;
   align-self: flex-start;
   font: inherit;
-  color: var(--foreground);
+  color: var(--legacy-foreground);
   background: #fff;
-  border: 2px solid var(--border);
+  border: 2px solid var(--legacy-border);
   border-radius: 999px;
   cursor: pointer;
 }
@@ -97,14 +139,14 @@ button {
    type="submit"> already — no component changes needed to tell them apart
    from secondary ones (type="button", e.g. Log out, sidebar toggle). */
 button[type="submit"] {
-  background: var(--accent);
-  border-color: var(--accent-border);
+  background: var(--legacy-accent);
+  border-color: var(--legacy-accent-border);
   color: #fff;
 }
 
 fieldset {
   padding: 0.75rem;
-  border: 2px solid var(--border);
+  border: 2px solid var(--legacy-border);
   border-radius: 8px;
 }
 
@@ -135,11 +177,13 @@ dialog {
   width: min(560px, 92vw);
   max-height: 85vh;
   overflow-y: auto;
-  background: var(--background);
-  border: 2px solid var(--border);
+  background: var(--legacy-background);
+  border: 2px solid var(--legacy-border);
   border-radius: 10px;
 }
 
 dialog::backdrop {
   background: rgba(26, 26, 26, 0.4);
 }
+
+} /* @layer base */
