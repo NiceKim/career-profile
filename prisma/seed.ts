@@ -4,12 +4,12 @@
 // Run with: node --env-file=.env prisma/seed.ts   (or `npm run db:seed`)
 //
 // Deliberately scoped to one user (by email) — never touches other accounts.
-// Reuses the real createObjectVersion/editObjectVersion functions instead of
+// Reuses the real createObject/editObjectRevision functions instead of
 // hand-rolling Prisma writes, so seeded data goes through the same
 // validation/versioning rules as the app itself.
 
 import { prisma } from '@/lib/prisma';
-import { createObjectVersion, editObjectVersion } from '@/lib/objects/versioning';
+import { createObject, editObjectRevision } from '@/lib/objects/versioning';
 import { createResumeFromScratch } from '@/lib/resumes/versioning';
 import { hashPassword } from '@/lib/password';
 
@@ -25,19 +25,22 @@ async function main() {
   });
 
   // Delete children before parents (no onDelete: Cascade in the schema).
-  await prisma.resumeVersionItem.deleteMany({ where: { resumeVersion: { ownerUserId: user.id } } });
-  await prisma.resumeVersionSection.deleteMany({ where: { resumeVersion: { ownerUserId: user.id } } });
-  await prisma.resumeVersion.deleteMany({ where: { ownerUserId: user.id } });
-  await prisma.objectVersion.deleteMany({ where: { ownerUserId: user.id } });
+  await prisma.sectionObject.deleteMany({ where: { resumeSection: { resumeRevision: { resume: { ownerUserId: user.id } } } } });
+  await prisma.resumeSection.deleteMany({ where: { resumeRevision: { resume: { ownerUserId: user.id } } } });
+  await prisma.resumeRevision.deleteMany({ where: { resume: { ownerUserId: user.id } } });
+  await prisma.resume.deleteMany({ where: { ownerUserId: user.id } });
+  await prisma.objectRevision.deleteMany({ where: { objectVariation: { object: { ownerUserId: user.id } } } });
+  await prisma.objectVariation.deleteMany({ where: { object: { ownerUserId: user.id } } });
+  await prisma.resumeObject.deleteMany({ where: { ownerUserId: user.id } });
 
-  const techCorpV1 = await createObjectVersion(
+  const techCorpV1 = await createObject(
     user.id,
     'WORK_EXPERIENCE',
     { company: 'TechCorp', title: 'Software Engineer', location: 'San Francisco, CA', startDate: '2022-01' },
     'Built and maintained internal tooling for the platform team.',
     ['current']
   );
-  const techCorp = await editObjectVersion(
+  const techCorp = await editObjectRevision(
     user.id,
     techCorpV1.id,
     { company: 'TechCorp', title: 'Senior Software Engineer', location: 'San Francisco, CA', startDate: '2022-01' },
@@ -45,7 +48,7 @@ async function main() {
     ['current']
   );
 
-  const startupXYZ = await createObjectVersion(
+  const startupXYZ = await createObject(
     user.id,
     'WORK_EXPERIENCE',
     { company: 'StartupXYZ', title: 'Software Engineer', location: 'Austin, TX', startDate: '2019-06', endDate: '2021-12' },
@@ -53,7 +56,7 @@ async function main() {
     []
   );
 
-  const education = await createObjectVersion(
+  const education = await createObject(
     user.id,
     'EDUCATION',
     { institution: 'University of Washington', degree: 'B.S. Computer Science', startDate: '2015-09', endDate: '2019-06' },
@@ -61,7 +64,7 @@ async function main() {
     []
   );
 
-  const skillsLangs = await createObjectVersion(
+  const skillsLangs = await createObject(
     user.id,
     'SKILLS',
     { category: 'Languages & Frameworks' },
@@ -69,7 +72,7 @@ async function main() {
     ['technical']
   );
 
-  const skillsTools = await createObjectVersion(
+  const skillsTools = await createObject(
     user.id,
     'SKILLS',
     { category: 'Tools' },
@@ -77,7 +80,7 @@ async function main() {
     ['technical', 'devops']
   );
 
-  const summary = await createObjectVersion(
+  const summary = await createObject(
     user.id,
     'SUMMARY',
     {},
@@ -85,7 +88,7 @@ async function main() {
     []
   );
 
-  const project = await createObjectVersion(
+  const project = await createObject(
     user.id,
     'PROJECT',
     { name: 'Resume Version Control', url: 'https://github.com/example/resume-vc', startDate: '2026-06' },
@@ -93,7 +96,7 @@ async function main() {
     ['side-project']
   );
 
-  const certification = await createObjectVersion(
+  const certification = await createObject(
     user.id,
     'CERTIFICATION',
     { issuer: 'Amazon Web Services', issueDate: '2023-05', expiryDate: '2026-05' },
@@ -101,7 +104,7 @@ async function main() {
     []
   );
 
-  await createObjectVersion(
+  await createObject(
     user.id,
     'EXTRACURRICULAR',
     { organization: 'Local Coding Bootcamp', role: 'Volunteer Mentor', startDate: '2021-01' },
@@ -112,30 +115,30 @@ async function main() {
   // One resume tying most of the above together, so there's something to open on
   // /dashboard/resumes right after seeding, not just a bare Object Dashboard.
   await createResumeFromScratch(user.id, 'Software Engineer Resume', [
-    { sectionType: 'SUMMARY', order: 0, items: [{ objectVersionId: summary.id, order: 0 }] },
+    { sectionType: 'SUMMARY', order: 0, items: [{ objectRevisionId: summary.id, order: 0 }] },
     {
       sectionType: 'WORK_EXPERIENCE',
       order: 1,
       items: [
-        { objectVersionId: techCorp.id, order: 0 },
-        { objectVersionId: startupXYZ.id, order: 1 },
+        { objectRevisionId: techCorp.id, order: 0 },
+        { objectRevisionId: startupXYZ.id, order: 1 },
       ],
     },
-    { sectionType: 'EDUCATION', order: 2, items: [{ objectVersionId: education.id, order: 0 }] },
+    { sectionType: 'EDUCATION', order: 2, items: [{ objectRevisionId: education.id, order: 0 }] },
     {
       sectionType: 'SKILLS',
       order: 3,
       items: [
-        { objectVersionId: skillsLangs.id, order: 0 },
-        { objectVersionId: skillsTools.id, order: 1 },
+        { objectRevisionId: skillsLangs.id, order: 0 },
+        { objectRevisionId: skillsTools.id, order: 1 },
       ],
     },
-    { sectionType: 'PROJECT', order: 4, items: [{ objectVersionId: project.id, order: 0 }] },
-    { sectionType: 'CERTIFICATION', order: 5, items: [{ objectVersionId: certification.id, order: 0 }] },
+    { sectionType: 'PROJECT', order: 4, items: [{ objectRevisionId: project.id, order: 0 }] },
+    { sectionType: 'CERTIFICATION', order: 5, items: [{ objectRevisionId: certification.id, order: 0 }] },
   ]);
 
-  const count = await prisma.objectVersion.count({ where: { ownerUserId: user.id } });
-  console.log(`Seeded ${count} object versions and 1 resume for ${DEMO_EMAIL}.`);
+  const count = await prisma.objectRevision.count({ where: { objectVariation: { object: { ownerUserId: user.id } } } });
+  console.log(`Seeded ${count} object revisions and 1 resume for ${DEMO_EMAIL}.`);
 }
 
 main()
