@@ -7,7 +7,7 @@ import type { ObjectType } from '@/lib/objects/schemas';
 type SectionInput = {
   sectionType: ObjectType;
   order: number;
-  items: Array<{ objectVersionId: string; order: number }>;
+  items: Array<{ objectRevisionId: string; order: number }>;
 };
 
 export async function createResumeAction(name: string, sections: SectionInput[] = []) {
@@ -17,21 +17,21 @@ export async function createResumeAction(name: string, sections: SectionInput[] 
 }
 
 export async function editResumeAction(
-  existingVersionId: string,
+  existingRevisionId: string,
   name: string | undefined,
   sections: SectionInput[]
 ) {
   const userId = await getCurrentUserId();
-  const resume = await editResume(userId, existingVersionId, name, sections);
+  const resume = await editResume(userId, existingRevisionId, name, sections);
   return { id: resume.id };
 }
 
 export async function forkResumeAction(
-  sourceVersionId: string,
+  sourceRevisionId: string,
   newName: string | undefined,
   sections: SectionInput[]
 ) {
   const userId = await getCurrentUserId();
-  const resume = await forkResume(userId, sourceVersionId, newName, sections);
+  const resume = await forkResume(userId, sourceRevisionId, newName, sections);
   return { id: resume.id };
 }
