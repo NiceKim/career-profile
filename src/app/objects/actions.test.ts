@@ -4,12 +4,14 @@ import { resetDb } from '../../../test/db';
 
 vi.mock('@/lib/session', () => ({ getCurrentUserId: vi.fn() }));
 import { getCurrentUserId } from '@/lib/session';
+import { createResumeAction } from '@/app/resumes/actions';
 import {
   createObjectAction,
   editObjectAction,
   forkObjectVariationAction,
   listLatestObjectsAction,
   getObjectHistoryAction,
+  getObjectVariationUsageAction,
 } from './actions';
 
 describe('object actions', () => {
@@ -83,5 +85,17 @@ describe('object actions', () => {
 
     const history = await getObjectHistoryAction(created.objectVariationId);
     expect(history).toHaveLength(2);
+  });
+
+  it('getObjectVariationUsageAction lists resumes using any revision, with the version each uses', async () => {
+    const user = await prisma.user.create({ data: { email: 'u5@example.com', passwordHash: 'x' } });
+    vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
+    const created = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
+    await createResumeAction('My Resume', [
+      { sectionType: 'SKILLS', order: 0, items: [{ objectRevisionId: created.id, order: 0 }] },
+    ]);
+
+    const usage = await getObjectVariationUsageAction(created.objectVariationId);
+    expect(usage).toEqual([{ resumeName: 'My Resume', resumeRevisionId: expect.any(String), versionNumber: 1 }]);
   });
 });

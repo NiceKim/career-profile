@@ -2,7 +2,7 @@
 
 import { getCurrentUserId } from '@/lib/session';
 import { createObject, editObjectRevision, forkObjectVariation } from '@/lib/objects/versioning';
-import { listLatestObjectsForUser, getObjectHistory } from '@/lib/objects/queries';
+import { listLatestObjectsForUser, getObjectHistory, getObjectVariationUsage } from '@/lib/objects/queries';
 import type { ObjectType } from '@/lib/objects/schemas';
 
 export async function createObjectAction(type: ObjectType, fields: unknown, body: string, tags: string[] = []) {
@@ -28,4 +28,9 @@ export async function listLatestObjectsAction(type?: ObjectType) {
 export async function getObjectHistoryAction(objectVariationId: string) {
   const userId = await getCurrentUserId();
   return getObjectHistory(userId, objectVariationId);
+}
+
+export async function getObjectVariationUsageAction(objectVariationId: string) {
+  const userId = await getCurrentUserId();
+  return getObjectVariationUsage(userId, objectVariationId);
 }

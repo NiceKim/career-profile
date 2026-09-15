@@ -59,6 +59,25 @@ export async function getObjectHistory(userId: string, objectVariationId: string
   }));
 }
 
+// Aggregates usage across every revision of a variation (not just one), for a "which
+// resumes use this, and which version of it" view — a resume can use any historic
+// revision, not just the variation's current latest.
+export async function getObjectVariationUsage(userId: string, objectVariationId: string) {
+  const revisions = await prisma.objectRevision.findMany({
+    where: { objectVariationId, objectVariation: { object: { ownerUserId: userId } } },
+    include: {
+      sectionObjects: { include: { resumeSection: { include: { resumeRevision: { include: { resume: true } } } } } },
+    },
+  });
+  return revisions.flatMap((r) =>
+    r.sectionObjects.map((so) => ({
+      resumeName: so.resumeSection.resumeRevision.resume.name,
+      resumeRevisionId: so.resumeSection.resumeRevision.id,
+      versionNumber: r.versionNumber,
+    }))
+  );
+}
+
 export async function listTagsForUser(userId: string): Promise<string[]> {
   const variations = await prisma.objectVariation.findMany({
     where: { object: { ownerUserId: userId } },
