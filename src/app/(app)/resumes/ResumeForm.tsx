@@ -13,14 +13,14 @@ import { Input } from '@/components/ui/input';
 
 const TYPES: ObjectType[] = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY', 'PROJECT', 'CERTIFICATION', 'EXTRACURRICULAR'];
 
-// Mirrors ObjectPickerModal's ObjectSummary (objectVersionId instead of id, since that's
+// Mirrors ObjectPickerModal's ObjectSummary (objectRevisionId instead of id, since that's
 // what a resume section stores) so recentObjects/prefillFrom never have to fabricate data.
 type Item = {
-  objectVersionId: string;
+  objectRevisionId: string;
   body: string;
   fields?: unknown;
   tags?: string[];
-  rootVersionId?: string;
+  objectVariationId?: string;
   versionNumber?: number;
   createdAt?: string | Date;
 };
@@ -30,18 +30,18 @@ type Picked = {
   body: string;
   fields?: unknown;
   tags?: string[];
-  rootVersionId?: string;
+  objectVariationId?: string;
   versionNumber?: number;
   createdAt?: string | Date;
 };
 
 function toItem(picked: Picked): Item {
   return {
-    objectVersionId: picked.id,
+    objectRevisionId: picked.id,
     body: picked.body,
     fields: picked.fields,
     tags: picked.tags,
-    rootVersionId: picked.rootVersionId,
+    objectVariationId: picked.objectVariationId,
     versionNumber: picked.versionNumber,
     createdAt: picked.createdAt,
   };
@@ -86,11 +86,11 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
       setRecent((r) => ({
         ...r,
         [type]: objs.map((o) => ({
-          objectVersionId: o.id,
+          objectRevisionId: o.id,
           body: o.body,
           fields: o.fields,
           tags: o.tags,
-          rootVersionId: o.rootVersionId,
+          objectVariationId: o.objectVariationId,
           versionNumber: o.versionNumber,
           createdAt: o.createdAt,
         })),
@@ -103,27 +103,27 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
   }
 
   // Item-level edit (Figma's per-item "Edit" button): reuses ObjectPickerModal's prefillFrom,
-  // same edit-in-place semantics as Task 18's chip pencil icon (new version, same rootVersionId).
-  function replaceItem(type: ObjectType, oldObjectVersionId: string, picked: Picked) {
+  // same edit-in-place semantics as the dashboard's chip pencil icon (new revision, same variation).
+  function replaceItem(type: ObjectType, oldObjectRevisionId: string, picked: Picked) {
     setSections((prev) =>
       prev.map((s) =>
         s.sectionType === type
           ? {
               ...s,
-              items: s.items.map((it) => (it.objectVersionId === oldObjectVersionId ? toItem(picked) : it)),
+              items: s.items.map((it) => (it.objectRevisionId === oldObjectRevisionId ? toItem(picked) : it)),
             }
           : s
       )
     );
   }
 
-  // Canonical form: name + ordered objectVersionIds per section. Editing an item's content
-  // yields a new objectVersionId (a new object version), so this also catches content edits,
+  // Canonical form: name + ordered objectRevisionIds per section. Editing an item's content
+  // yields a new objectRevisionId (a new object revision), so this also catches content edits,
   // not just add/remove/reorder.
   function canonical(n: string, s: typeof sections) {
     return JSON.stringify({
       name: n.trim(),
-      sections: s.map((sec) => ({ type: sec.sectionType, items: sec.items.map((it) => it.objectVersionId) })),
+      sections: s.map((sec) => ({ type: sec.sectionType, items: sec.items.map((it) => it.objectRevisionId) })),
     });
   }
 
@@ -135,7 +135,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
     const payload = sections.map((s, i) => ({
       sectionType: s.sectionType,
       order: i,
-      items: s.items.map((it, j) => ({ objectVersionId: it.objectVersionId, order: j })),
+      items: s.items.map((it, j) => ({ objectRevisionId: it.objectRevisionId, order: j })),
     }));
 
     const result =
@@ -184,14 +184,14 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
           <div className="grid grid-cols-2 gap-3">
             {section.items.map((item) => (
               <ObjectVersionChip
-                key={item.objectVersionId}
+                key={item.objectRevisionId}
                 type={section.sectionType}
-                version={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags }}
+                version={{ id: item.objectRevisionId, body: item.body, fields: item.fields, tags: item.tags }}
                 editTrigger={
                   <ObjectPickerModal
                     type={section.sectionType}
-                    prefillFrom={{ id: item.objectVersionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
-                    onPick={(picked) => replaceItem(section.sectionType, item.objectVersionId, picked)}
+                    prefillFrom={{ id: item.objectRevisionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
+                    onPick={(picked) => replaceItem(section.sectionType, item.objectRevisionId, picked)}
                     triggerLabel="✎"
                   />
                 }
@@ -201,8 +201,8 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
           <ObjectPickerModal
             type={section.sectionType}
             recentObjects={(recent[section.sectionType] ?? []).map((r) => ({
-              id: r.objectVersionId,
-              rootVersionId: r.rootVersionId,
+              id: r.objectRevisionId,
+              objectVariationId: r.objectVariationId,
               body: r.body,
               versionNumber: r.versionNumber ?? 0,
               fields: r.fields,

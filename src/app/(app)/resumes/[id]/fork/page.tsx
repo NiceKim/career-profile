@@ -15,13 +15,13 @@ export default async function ForkResumePage({ params }: { params: Promise<{ id:
       initialSections={source.sections.map((s) => ({
         sectionType: s.sectionType,
         items: s.items.map((it) => ({
-          objectVersionId: it.objectVersionId,
-          body: it.objectVersion.body,
-          fields: it.objectVersion.fields,
-          tags: it.objectVersion.tags,
-          rootVersionId: it.objectVersion.rootVersionId,
-          versionNumber: it.objectVersion.versionNumber,
-          createdAt: it.objectVersion.createdAt,
+          objectRevisionId: it.objectRevisionId,
+          body: it.objectRevision.body,
+          fields: it.objectRevision.fields,
+          tags: it.objectRevision.tags,
+          objectVariationId: it.objectRevision.objectVariationId,
+          versionNumber: it.objectRevision.versionNumber,
+          createdAt: it.objectRevision.createdAt,
         })),
       }))}
       versionInfo={`Forked from ${source.name}`}

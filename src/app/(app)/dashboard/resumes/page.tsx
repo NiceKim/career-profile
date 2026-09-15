@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button';
 type Tree = Awaited<ReturnType<typeof getResumeForest>>[number];
 
 // Recurses to arbitrary depth — `forest` is already a flat list of every tree with a
-// forkedFromRootVersionId link, so a fork-of-a-fork just keeps matching one level deeper.
+// forkedFromResumeId link, so a fork-of-a-fork just keeps matching one level deeper.
 function ResumeTreeRow({ tree, forest, depth = 0 }: { tree: Tree; forest: Tree[]; depth?: number }) {
-  const children = forest.filter((t) => t.forkedFromRootVersionId === tree.rootVersionId);
+  const children = forest.filter((t) => t.forkedFromResumeId === tree.resumeId);
   return (
     <li style={{ marginLeft: depth * 24 }}>
       {/* Whole row is one link — not just the name — so clicking anywhere on it
@@ -29,7 +29,7 @@ function ResumeTreeRow({ tree, forest, depth = 0 }: { tree: Tree; forest: Tree[]
       {children.length > 0 && (
         <ul>
           {children.map((child) => (
-            <ResumeTreeRow key={child.rootVersionId} tree={child} forest={forest} depth={depth + 1} />
+            <ResumeTreeRow key={child.resumeId} tree={child} forest={forest} depth={depth + 1} />
           ))}
         </ul>
       )}
@@ -40,14 +40,14 @@ function ResumeTreeRow({ tree, forest, depth = 0 }: { tree: Tree; forest: Tree[]
 export default async function ResumeDashboardPage() {
   const userId = await getCurrentUserId();
   const forest = await getResumeForest(userId);
-  const roots = forest.filter((t) => !t.forkedFromRootVersionId);
+  const roots = forest.filter((t) => !t.forkedFromResumeId);
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold tracking-tight text-foreground">My Resumes</h1>
       <ul className="border-t border-border">
         {roots.map((tree) => (
-          <ResumeTreeRow key={tree.rootVersionId} tree={tree} forest={forest} />
+          <ResumeTreeRow key={tree.resumeId} tree={tree} forest={forest} />
         ))}
       </ul>
       <Button render={<Link href="/resumes/new" />} className="mt-2 self-start">
