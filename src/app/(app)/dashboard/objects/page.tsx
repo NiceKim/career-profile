@@ -15,7 +15,7 @@ export default async function ObjectDashboardPage({
   const activeTags = tags ? tags.split(',').map((t) => t.trim()) : [];
   const filtered = dashboard.filter((entry) => {
     if (activeTags.length === 0) return true;
-    return entry.versions.some((v) => v.tags.some((t) => activeTags.includes(t)));
+    return entry.variations.some((v) => v.tags.some((t) => activeTags.includes(t)));
   });
 
   return <ObjectDashboardClient dashboard={filtered} allTags={allTags} searchTags={tags} />;
