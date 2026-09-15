@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createResumeAction, editResumeAction, forkResumeAction } from '@/app/resumes/actions';
-import { ObjectPickerModal } from '@/components/ObjectPickerModal';
+import { ObjectPickerModal, type ObjectDraft } from '@/components/ObjectPickerModal';
 import { ObjectVersionChip } from '@/components/ObjectVersionChip';
-import { listLatestObjectsAction } from '@/app/objects/actions';
+import { createObjectAction, editObjectAction, forkObjectVariationAction, listLatestObjectsAction } from '@/app/objects/actions';
 import type { ObjectType } from '@/lib/objects/schemas';
 import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,9 @@ const TYPES: ObjectType[] = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY'
 
 // Mirrors ObjectPickerModal's ObjectSummary (objectRevisionId instead of id, since that's
 // what a resume section stores) so recentObjects/prefillFrom never have to fabricate data.
+// `draft` is present when this item hasn't been written to the DB yet — object creates/
+// edits/duplicates made while authoring a resume are staged (objectRevisionId is a client-
+// only placeholder), and only resolved into real rows when the resume itself is submitted.
 type Item = {
   objectRevisionId: string;
   objectId?: string;
@@ -24,8 +27,9 @@ type Item = {
   objectVariationId?: string;
   versionNumber?: number;
   createdAt?: string | Date;
+  draft?: ObjectDraft;
 };
-// What ObjectPickerModal's onPick now hands back (the full saved/picked object).
+// What ObjectPickerModal's onPick now hands back (the full saved/picked object, or a draft).
 type Picked = {
   id: string;
   objectId?: string;
@@ -35,6 +39,7 @@ type Picked = {
   objectVariationId?: string;
   versionNumber?: number;
   createdAt?: string | Date;
+  draft?: ObjectDraft;
 };
 
 function toItem(picked: Picked): Item {
@@ -47,7 +52,21 @@ function toItem(picked: Picked): Item {
     objectVariationId: picked.objectVariationId,
     versionNumber: picked.versionNumber,
     createdAt: picked.createdAt,
+    draft: picked.draft,
   };
+}
+
+// Resolves a staged item into a real objectRevisionId, writing it to the DB via whichever
+// action its draft calls for. Already-real items (no draft) pass through untouched.
+async function resolveItem(item: Item): Promise<string> {
+  if (!item.draft) return item.objectRevisionId;
+  const saved =
+    item.draft.kind === 'create'
+      ? await createObjectAction(item.draft.type, item.fields, item.body, item.tags)
+      : item.draft.kind === 'edit'
+        ? await editObjectAction(item.draft.sourceRevisionId, item.fields, item.body, item.tags)
+        : await forkObjectVariationAction(item.draft.objectId, item.fields, item.body, item.tags);
+  return saved.id;
 }
 
 type Props = {
@@ -136,11 +155,17 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
   const hasNoItems = sections.every((s) => s.items.length === 0);
 
   async function handleSubmit() {
-    const payload = sections.map((s, i) => ({
-      sectionType: s.sectionType,
-      order: i,
-      items: s.items.map((it, j) => ({ objectRevisionId: it.objectRevisionId, order: j })),
-    }));
+    // Staged object drafts (create/edit/duplicate made while authoring this resume) only
+    // get written now, resolved into real ids before the resume itself is saved.
+    const payload = await Promise.all(
+      sections.map(async (s, i) => ({
+        sectionType: s.sectionType,
+        order: i,
+        items: await Promise.all(
+          s.items.map(async (it, j) => ({ objectRevisionId: await resolveItem(it), order: j }))
+        ),
+      }))
+    );
 
     const result =
       mode === 'create'
@@ -195,9 +220,19 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
                   <div className="flex gap-1">
                     <ObjectPickerModal
                       type={section.sectionType}
-                      prefillFrom={{ id: item.objectRevisionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
+                      prefillFrom={{
+                        id: item.objectRevisionId,
+                        body: item.body,
+                        fields: item.fields,
+                        tags: item.tags,
+                        versionNumber: 0,
+                        objectId: item.objectId,
+                        objectVariationId: item.objectVariationId,
+                        draft: item.draft,
+                      }}
                       onPick={(picked) => replaceItem(section.sectionType, itemIndex, picked)}
                       triggerLabel="✎"
+                      defer
                     />
                     <ObjectPickerModal
                       type={section.sectionType}
@@ -211,6 +246,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
                       }}
                       onPick={(picked) => addItem(section.sectionType, toItem(picked))}
                       triggerLabel="⧉"
+                      defer
                     />
                   </div>
                 }
@@ -231,6 +267,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
             }))}
             onOpen={() => openPickerFor(section.sectionType)}
             onPick={(picked) => addItem(section.sectionType, toItem(picked))}
+            defer
           />
         </fieldset>
       ))}
@@ -263,7 +300,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
                 : undefined
         }
       >
-        {mode === 'create' ? 'Done' : mode === 'edit' ? 'Save new version' : 'Save fork'}
+        {mode === 'create' ? 'Done' : mode === 'edit' ? 'Save' : 'Save fork'}
       </Button>
     </div>
   );

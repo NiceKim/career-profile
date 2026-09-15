@@ -12,6 +12,13 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 
+// Describes how to turn a staged (not-yet-written) object into a real DB row once the
+// caller is ready to commit it — see the `defer` prop.
+export type ObjectDraft =
+  | { kind: 'create'; type: ObjectType }
+  | { kind: 'edit'; sourceRevisionId: string }
+  | { kind: 'fork'; objectId: string };
+
 type ObjectSummary = {
   id: string;
   objectId?: string;
@@ -21,6 +28,9 @@ type ObjectSummary = {
   fields?: unknown;
   tags?: string[];
   createdAt?: string | Date;
+  // Present when this object hasn't been written to the DB yet — onPick receives a
+  // client-only placeholder instead of a real saved row.
+  draft?: ObjectDraft;
 };
 
 function parseTags(raw: FormDataEntryValue | null): string[] {
@@ -47,6 +57,11 @@ type Props = {
   // Fires when the plain "recent picker" view opens (not the editingObjectVariationId browse
   // view, which already fetches on open). Lets a caller lazy-load recentObjects on first open.
   onOpen?: () => void;
+  // When true, submitting the create/edit/fork form never touches the DB — onPick receives
+  // a client-only draft (with enough info to resolve it later) instead of a saved row. Used
+  // by ResumeForm: object changes made while authoring a resume are staged, only written
+  // when the resume itself is submitted.
+  defer?: boolean;
 };
 
 export function ObjectPickerModal({
@@ -58,6 +73,7 @@ export function ObjectPickerModal({
   prefillFrom,
   forkFrom,
   onOpen,
+  defer = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'recent' | 'allVersions'>('recent');
@@ -88,7 +104,7 @@ export function ObjectPickerModal({
   const prefillFields = (prefillContent?.fields as Record<string, unknown> | undefined) ?? {};
   const isIconTrigger = triggerLabel.length <= 2;
   const dialogTitle = forkFrom ? `New Variation — ${type}` : prefillFrom ? `Edit ${type}` : `Add Object — ${type}`;
-  const submitLabel = forkFrom ? 'Save as new variation' : prefillFrom ? 'Save new version' : 'Create';
+  const submitLabel = forkFrom ? 'Save' : prefillFrom ? 'Save' : 'Create';
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -148,6 +164,31 @@ export function ObjectPickerModal({
                   );
                   const body = String(formData.get('body'));
                   const tags = parseTags(formData.get('tags'));
+
+                  if (defer) {
+                    // Re-staging an already-staged draft resolves against its *original*
+                    // target, not the placeholder id of the not-yet-saved edit itself —
+                    // otherwise a second edit before submit would try to edit a row that
+                    // doesn't exist yet.
+                    const draft: ObjectDraft = forkFrom
+                      ? { kind: 'fork', objectId: forkFrom.objectId! }
+                      : prefillFrom
+                        ? prefillFrom.draft ?? { kind: 'edit', sourceRevisionId: prefillFrom.id }
+                        : { kind: 'create', type };
+                    pick({
+                      id: crypto.randomUUID(),
+                      objectId: forkFrom ? forkFrom.objectId : prefillFrom?.objectId,
+                      objectVariationId: forkFrom ? undefined : prefillFrom?.objectVariationId,
+                      versionNumber: 0,
+                      fields,
+                      body,
+                      tags,
+                      createdAt: new Date().toISOString(),
+                      draft,
+                    });
+                    return;
+                  }
+
                   const saved = forkFrom
                     ? await forkObjectVariationAction(forkFrom.objectId!, fields, body, tags)
                     : prefillFrom
@@ -196,8 +237,8 @@ export function ObjectPickerModal({
                   onClick={editingObjectVariationId ? undefined : () => pick(v)}
                   editTrigger={
                     <div className="flex gap-1">
-                      <ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" />
-                      <ObjectPickerModal type={type} forkFrom={v} onPick={onPick} triggerLabel="⧉" />
+                      <ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" defer={defer} />
+                      <ObjectPickerModal type={type} forkFrom={v} onPick={onPick} triggerLabel="⧉" defer={defer} />
                     </div>
                   }
                 />
