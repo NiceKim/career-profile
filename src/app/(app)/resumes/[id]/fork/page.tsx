@@ -16,6 +16,7 @@ export default async function ForkResumePage({ params }: { params: Promise<{ id:
         sectionType: s.sectionType,
         items: s.items.map((it) => ({
           objectRevisionId: it.objectRevisionId,
+          objectId: it.objectRevision.objectId,
           body: it.objectRevision.body,
           fields: it.objectRevision.fields,
           tags: it.objectRevision.tags,

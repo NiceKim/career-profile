@@ -25,7 +25,7 @@ export async function getResumeVersionWithContent(userId: string, resumeRevision
         include: {
           items: {
             orderBy: { order: 'asc' },
-            include: { objectRevision: { include: { objectVariation: true } } },
+            include: { objectRevision: { include: { objectVariation: { include: { object: true } } } } },
           },
         },
       },
@@ -49,6 +49,7 @@ export async function getResumeVersionWithContent(userId: string, resumeRevision
         objectRevisionId: item.objectRevisionId,
         objectRevision: {
           id: item.objectRevision.id,
+          objectId: item.objectRevision.objectVariation.object.id,
           body: item.objectRevision.body,
           fields: item.objectRevision.fields,
           tags: item.objectRevision.objectVariation.tags,

@@ -17,6 +17,7 @@ const TYPES: ObjectType[] = ['WORK_EXPERIENCE', 'EDUCATION', 'SKILLS', 'SUMMARY'
 // what a resume section stores) so recentObjects/prefillFrom never have to fabricate data.
 type Item = {
   objectRevisionId: string;
+  objectId?: string;
   body: string;
   fields?: unknown;
   tags?: string[];
@@ -27,6 +28,7 @@ type Item = {
 // What ObjectPickerModal's onPick now hands back (the full saved/picked object).
 type Picked = {
   id: string;
+  objectId?: string;
   body: string;
   fields?: unknown;
   tags?: string[];
@@ -38,6 +40,7 @@ type Picked = {
 function toItem(picked: Picked): Item {
   return {
     objectRevisionId: picked.id,
+    objectId: picked.objectId,
     body: picked.body,
     fields: picked.fields,
     tags: picked.tags,
@@ -87,6 +90,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
         ...r,
         [type]: objs.map((o) => ({
           objectRevisionId: o.id,
+          objectId: o.objectId,
           body: o.body,
           fields: o.fields,
           tags: o.tags,
@@ -104,14 +108,14 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
 
   // Item-level edit (Figma's per-item "Edit" button): reuses ObjectPickerModal's prefillFrom,
   // same edit-in-place semantics as the dashboard's chip pencil icon (new revision, same variation).
-  function replaceItem(type: ObjectType, oldObjectRevisionId: string, picked: Picked) {
+  // Targets by index, not objectRevisionId — a section can legitimately hold the same object
+  // revision twice (SectionObject has no uniqueness constraint on the reference itself, only on
+  // order), and matching by value would silently replace every occurrence instead of just one.
+  function replaceItem(type: ObjectType, index: number, picked: Picked) {
     setSections((prev) =>
       prev.map((s) =>
         s.sectionType === type
-          ? {
-              ...s,
-              items: s.items.map((it) => (it.objectRevisionId === oldObjectRevisionId ? toItem(picked) : it)),
-            }
+          ? { ...s, items: s.items.map((it, i) => (i === index ? toItem(picked) : it)) }
           : s
       )
     );
@@ -182,18 +186,33 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
             </Button>
           </legend>
           <div className="grid grid-cols-2 gap-3">
-            {section.items.map((item) => (
+            {section.items.map((item, itemIndex) => (
               <ObjectVersionChip
-                key={item.objectRevisionId}
+                key={`${item.objectRevisionId}-${itemIndex}`}
                 type={section.sectionType}
                 version={{ id: item.objectRevisionId, body: item.body, fields: item.fields, tags: item.tags }}
                 editTrigger={
-                  <ObjectPickerModal
-                    type={section.sectionType}
-                    prefillFrom={{ id: item.objectRevisionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
-                    onPick={(picked) => replaceItem(section.sectionType, item.objectRevisionId, picked)}
-                    triggerLabel="✎"
-                  />
+                  <div className="flex gap-1">
+                    <ObjectPickerModal
+                      type={section.sectionType}
+                      prefillFrom={{ id: item.objectRevisionId, body: item.body, fields: item.fields, tags: item.tags, versionNumber: 0 }}
+                      onPick={(picked) => replaceItem(section.sectionType, itemIndex, picked)}
+                      triggerLabel="✎"
+                    />
+                    <ObjectPickerModal
+                      type={section.sectionType}
+                      forkFrom={{
+                        objectId: item.objectId,
+                        id: item.objectRevisionId,
+                        body: item.body,
+                        fields: item.fields,
+                        tags: item.tags,
+                        versionNumber: item.versionNumber ?? 0,
+                      }}
+                      onPick={(picked) => addItem(section.sectionType, toItem(picked))}
+                      triggerLabel="⧉"
+                    />
+                  </div>
                 }
               />
             ))}
@@ -202,6 +221,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
             type={section.sectionType}
             recentObjects={(recent[section.sectionType] ?? []).map((r) => ({
               id: r.objectRevisionId,
+              objectId: r.objectId,
               objectVariationId: r.objectVariationId,
               body: r.body,
               versionNumber: r.versionNumber ?? 0,

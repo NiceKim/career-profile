@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, Plus } from 'lucide-react';
+import { Copy, Pencil, Plus } from 'lucide-react';
 import { createObjectAction, editObjectAction, forkObjectVariationAction, getObjectHistoryAction } from '@/app/objects/actions';
 import type { ObjectType } from '@/lib/objects/schemas';
 import { FIELDS_BY_TYPE } from '@/lib/objects/fieldConfig';
@@ -94,8 +94,8 @@ export function ObjectPickerModal({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
-          <Button type="button" variant={isIconTrigger ? 'ghost' : 'secondary'} size={isIconTrigger ? 'icon' : 'sm'} aria-label={triggerLabel === '✎' ? 'Edit' : triggerLabel === '→' ? 'See all versions' : undefined}>
-            {triggerLabel === '✎' ? <Pencil className="size-3.5" /> : triggerLabel === '+ Object' ? (
+          <Button type="button" variant={isIconTrigger ? 'ghost' : 'secondary'} size={isIconTrigger ? 'icon' : 'sm'} aria-label={triggerLabel === '✎' ? 'Edit' : triggerLabel === '→' ? 'See all versions' : triggerLabel === '⧉' ? 'Duplicate as new variation' : undefined}>
+            {triggerLabel === '✎' ? <Pencil className="size-3.5" /> : triggerLabel === '⧉' ? <Copy className="size-3.5" /> : triggerLabel === '+ Object' ? (
               <>
                 <Plus className="size-3.5" /> Object
               </>
