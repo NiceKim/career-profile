@@ -48,9 +48,15 @@ export async function getObjectHistory(userId: string, objectVariationId: string
   const revisions = await prisma.objectRevision.findMany({
     where: { objectVariationId, objectVariation: { object: { ownerUserId: userId } } },
     orderBy: { versionNumber: 'asc' },
-    include: { objectVariation: { include: { object: true } } },
+    include: {
+      objectVariation: { include: { object: true } },
+      sectionObjects: { include: { resumeSection: { include: { resumeRevision: { include: { resume: true } } } } } },
+    },
   });
-  return revisions.map(toSummary);
+  return revisions.map((r) => ({
+    ...toSummary(r),
+    usedInResumeNames: r.sectionObjects.map((so) => so.resumeSection.resumeRevision.resume.name),
+  }));
 }
 
 export async function listTagsForUser(userId: string): Promise<string[]> {

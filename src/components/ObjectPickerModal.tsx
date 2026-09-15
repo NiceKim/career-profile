@@ -194,7 +194,12 @@ export function ObjectPickerModal({
                   type={type}
                   version={v}
                   onClick={editingObjectVariationId ? undefined : () => pick(v)}
-                  editTrigger={<ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" />}
+                  editTrigger={
+                    <div className="flex gap-1">
+                      <ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" />
+                      <ObjectPickerModal type={type} forkFrom={v} onPick={onPick} triggerLabel="⧉" />
+                    </div>
+                  }
                 />
               ))}
             </div>

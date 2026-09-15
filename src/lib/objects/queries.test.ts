@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '@/lib/prisma';
 import { resetDb } from '../../../test/db';
 import { createObject, editObjectRevision } from './versioning';
+import { createResumeFromScratch, editResume } from '../resumes/versioning';
 import { listObjectsForUser, listLatestObjectsForUser, getObjectHistory, listTagsForUser } from './queries';
 
 describe('object queries', () => {
@@ -38,6 +39,21 @@ describe('object queries', () => {
     const history = await getObjectHistory(user.id, v1.objectVariationId);
 
     expect(history.map((v) => v.id)).toEqual([v1.id, v2.id]);
+  });
+
+  it('includes which resumes use each revision', async () => {
+    const user = await prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
+    const v1 = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const v2 = await editObjectRevision(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
+    const resume = await createResumeFromScratch(user.id, 'My Resume');
+    await editResume(user.id, resume.id, undefined, [
+      { sectionType: 'SKILLS', order: 0, items: [{ objectRevisionId: v2.id, order: 0 }] },
+    ]);
+
+    const history = await getObjectHistory(user.id, v1.objectVariationId);
+
+    expect(history.find((r) => r.id === v1.id)?.usedInResumeNames).toEqual([]);
+    expect(history.find((r) => r.id === v2.id)?.usedInResumeNames).toEqual(['My Resume']);
   });
 
   it('lists only the latest revision of each variation, optionally filtered by type', async () => {
