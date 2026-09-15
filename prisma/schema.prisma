@@ -23,9 +23,9 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
 
-  profile        Profile?
-  objectVersions ObjectVersion[]
-  resumeVersions ResumeVersion[]
+  profile Profile?
+  objects ResumeObject[]
+  resumes Resume[]
 }
 
 model Profile {
@@ -39,60 +39,90 @@ model Profile {
   links    Json
 }
 
-model ObjectVersion {
-  id            String     @id @default(uuid())
-  rootVersionId String
-  ownerUserId   String
-  owner         User       @relation(fields: [ownerUserId], references: [id])
-  type          ObjectType
-  versionNumber Int
-  fields        Json
-  body          String
-  tags          String[]   @default([])
-  createdAt     DateTime   @default(now())
+model ResumeObject {
+  id          String     @id @default(uuid())
+  ownerUserId String
+  owner       User       @relation(fields: [ownerUserId], references: [id])
+  type        ObjectType
 
-  resumeVersionItems ResumeVersionItem[]
+  variations ObjectVariation[]
 
   @@index([ownerUserId])
-  @@index([rootVersionId])
 }
 
-model ResumeVersion {
+model ObjectVariation {
+  id       String       @id @default(uuid())
+  objectId String
+  object   ResumeObject @relation(fields: [objectId], references: [id])
+  tags     String[]     @default([])
+
+  revisions ObjectRevision[]
+
+  @@index([objectId])
+}
+
+model ObjectRevision {
+  id                String          @id @default(uuid())
+  objectVariationId String
+  objectVariation   ObjectVariation @relation(fields: [objectVariationId], references: [id])
+  fields            Json
+  body              String
+  versionNumber     Int
+  createdAt         DateTime        @default(now())
+
+  sectionObjects SectionObject[]
+
+  @@index([objectVariationId])
+}
+
+model Resume {
   id              String   @id @default(uuid())
-  rootVersionId   String
   parentVersionId String?
   ownerUserId     String
   owner           User     @relation(fields: [ownerUserId], references: [id])
   name            String
-  createdAt       DateTime @default(now())
+  tags            String[] @default([])
 
-  sections ResumeVersionSection[]
-  items    ResumeVersionItem[]
+  revisions ResumeRevision[]
 
   @@index([ownerUserId])
-  @@index([rootVersionId])
   @@index([parentVersionId])
 }
 
-model ResumeVersionSection {
-  id              String        @id @default(uuid())
-  resumeVersionId String
-  resumeVersion   ResumeVersion @relation(fields: [resumeVersionId], references: [id])
-  sectionType     ObjectType
-  order           Int
+model ResumeRevision {
+  id            String   @id @default(uuid())
+  resumeId      String
+  resume        Resume   @relation(fields: [resumeId], references: [id])
+  versionNumber Int
+  createdAt     DateTime @default(now())
 
-  @@unique([resumeVersionId, sectionType])
-  @@index([resumeVersionId])
+  sections ResumeSection[]
+
+  @@index([resumeId])
 }
 
-model ResumeVersionItem {
-  id              String        @id @default(uuid())
-  resumeVersionId String
-  resumeVersion   ResumeVersion @relation(fields: [resumeVersionId], references: [id])
-  objectVersionId String
-  objectVersion   ObjectVersion @relation(fields: [objectVersionId], references: [id])
-  order           Int
+model ResumeSection {
+  id               String         @id @default(uuid())
+  resumeRevisionId String
+  resumeRevision   ResumeRevision @relation(fields: [resumeRevisionId], references: [id])
+  sectionType      ObjectType
+  order            Int
 
-  @@index([resumeVersionId])
-  @@index([objectVersionId])
+  items SectionObject[]
+
+  @@unique([resumeRevisionId, sectionType])
+  @@index([resumeRevisionId])
+}
+
+model SectionObject {
+  id               String         @id @default(uuid())
+  resumeSectionId  String
+  resumeSection    ResumeSection  @relation(fields: [resumeSectionId], references: [id])
+  objectRevisionId String
+  objectRevision   ObjectRevision @relation(fields: [objectRevisionId], references: [id])
+  order            Int
+
+  @@unique([resumeSectionId, order])
+  @@index([resumeSectionId])
+  @@index([objectRevisionId])
 }
