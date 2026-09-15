@@ -85,22 +85,7 @@ export function ObjectDashboardClient({
                     const shown = [...variation.revisions].reverse().slice(0, CHIP_LIMIT);
                     return (
                       <div key={variation.objectVariationId}>
-                        <div className="mb-2 flex items-center justify-between gap-3 text-sm text-muted-foreground">
-                          <span>{getIdentityLabel(type, latest.fields)}</span>
-                          <ObjectPickerModal
-                            type={type}
-                            forkFrom={{
-                              objectId: entry.objectId,
-                              id: latest.id,
-                              body: latest.body,
-                              fields: latest.fields,
-                              tags: latest.tags,
-                              versionNumber: latest.versionNumber,
-                            }}
-                            onPick={refresh}
-                            triggerLabel="+ Variation"
-                          />
-                        </div>
+                        <div className="mb-2 text-sm text-muted-foreground">{getIdentityLabel(type, latest.fields)}</div>
                         <div className="grid grid-cols-2 items-start gap-3">
                           {shown.map((v) => (
                             <ObjectVersionChip
@@ -108,7 +93,22 @@ export function ObjectDashboardClient({
                               type={type}
                               version={v}
                               editTrigger={
-                                <ObjectPickerModal type={type} prefillFrom={v} onPick={refresh} triggerLabel="✎" />
+                                <div className="flex gap-1">
+                                  <ObjectPickerModal type={type} prefillFrom={v} onPick={refresh} triggerLabel="✎" />
+                                  <ObjectPickerModal
+                                    type={type}
+                                    forkFrom={{
+                                      objectId: entry.objectId,
+                                      id: v.id,
+                                      body: v.body,
+                                      fields: v.fields,
+                                      tags: v.tags,
+                                      versionNumber: v.versionNumber,
+                                    }}
+                                    onPick={refresh}
+                                    triggerLabel="⧉"
+                                  />
+                                </div>
                               }
                             />
                           ))}

@@ -94,7 +94,7 @@ export function ObjectPickerModal({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
-          <Button type="button" variant={isIconTrigger ? 'ghost' : 'secondary'} size={isIconTrigger ? 'icon' : 'sm'} aria-label={triggerLabel === '✎' ? 'Edit' : triggerLabel === '→' ? 'See all versions' : triggerLabel === '⧉' ? 'Duplicate as new variation' : undefined}>
+          <Button type="button" variant={isIconTrigger ? 'ghost' : 'secondary'} size={isIconTrigger ? 'icon' : 'sm'} aria-label={triggerLabel === '✎' ? 'Edit' : triggerLabel === '→' ? 'See all versions' : triggerLabel === '⧉' ? 'New Variation' : undefined}>
             {triggerLabel === '✎' ? <Pencil className="size-3.5" /> : triggerLabel === '⧉' ? <Copy className="size-3.5" /> : triggerLabel === '+ Object' ? (
               <>
                 <Plus className="size-3.5" /> Object
