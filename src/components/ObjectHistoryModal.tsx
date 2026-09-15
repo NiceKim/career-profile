@@ -36,10 +36,14 @@ export function ObjectHistoryModal({
   type,
   objectVariationId,
   trigger,
+  // When opened from a resume's content, marks which revision that resume is actually
+  // using — opens straight to it, and flags it in the history list.
+  highlightRevisionId,
 }: {
   type: ObjectType;
   objectVariationId: string;
   trigger: React.ReactNode;
+  highlightRevisionId?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('history');
@@ -50,9 +54,11 @@ export function ObjectHistoryModal({
   async function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) return;
-    setHistory(await getObjectHistoryAction(objectVariationId));
+    const result = await getObjectHistoryAction(objectVariationId);
+    setHistory(result);
     setTab('history');
-    setDetailIndex(null);
+    const highlightIndex = highlightRevisionId ? result.findIndex((v) => v.id === highlightRevisionId) : -1;
+    setDetailIndex(highlightIndex === -1 ? null : highlightIndex);
     setUsage(null);
   }
 
@@ -102,7 +108,9 @@ export function ObjectHistoryModal({
                   onClick={() => setDetailIndex(i)}
                   className="block w-full rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-muted"
                 >
-                  Version {i + 1} {i === history.length - 1 && '(current)'} — edited{' '}
+                  Version {i + 1}
+                  {i === history.length - 1 && ' (current)'}
+                  {v.id === highlightRevisionId && ' (used in this resume)'} — edited{' '}
                   {new Date(v.createdAt).toISOString().slice(0, 10)}
                 </button>
               </li>
@@ -112,9 +120,14 @@ export function ObjectHistoryModal({
 
         {tab === 'history' && selected && detailIndex !== null && (
           <div className="mt-2 flex flex-col gap-3">
-            <Button type="button" variant="secondary" size="sm" className="self-start" onClick={() => setDetailIndex(null)}>
-              ← Back to history
-            </Button>
+            <div className="flex items-center justify-between gap-3">
+              <Button type="button" variant="secondary" size="sm" onClick={() => setDetailIndex(null)}>
+                ← Back to history
+              </Button>
+              {selected.id === highlightRevisionId && (
+                <span className="text-xs font-medium text-muted-foreground">Used in this resume</span>
+              )}
+            </div>
             <ObjectVersionChip type={type} version={selected} />
           </div>
         )}

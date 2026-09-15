@@ -63,6 +63,7 @@ export default async function ViewResumePage({
                   key={item.id}
                   type={section.sectionType}
                   objectVariationId={item.objectRevision.objectVariationId}
+                  highlightRevisionId={item.objectRevisionId}
                   trigger={<ObjectVersionChip type={section.sectionType} version={item.objectRevision} />}
                 />
               ))}
