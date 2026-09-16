@@ -82,6 +82,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
   const [name, setName] = useState(initialName);
   const [sections, setSections] = useState(initialSections);
   const [recent, setRecent] = useState<Record<string, Item[]>>({});
+  const [submitting, setSubmitting] = useState(false);
 
   function addSectionType(type: ObjectType) {
     if (sections.some((s) => s.sectionType === type)) return;
@@ -155,26 +156,32 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
   const hasNoItems = sections.every((s) => s.items.length === 0);
 
   async function handleSubmit() {
-    // Staged object drafts (create/edit/duplicate made while authoring this resume) only
-    // get written now, resolved into real ids before the resume itself is saved.
-    const payload = await Promise.all(
-      sections.map(async (s, i) => ({
-        sectionType: s.sectionType,
-        order: i,
-        items: await Promise.all(
-          s.items.map(async (it, j) => ({ objectRevisionId: await resolveItem(it), order: j }))
-        ),
-      }))
-    );
+    setSubmitting(true);
+    try {
+      // Staged object drafts (create/edit/duplicate made while authoring this resume) only
+      // get written now, resolved into real ids before the resume itself is saved.
+      const payload = await Promise.all(
+        sections.map(async (s, i) => ({
+          sectionType: s.sectionType,
+          order: i,
+          items: await Promise.all(
+            s.items.map(async (it, j) => ({ objectRevisionId: await resolveItem(it), order: j }))
+          ),
+        }))
+      );
 
-    const result =
-      mode === 'create'
-        ? await createResumeAction(name, payload)
-        : mode === 'edit'
-          ? await editResumeAction(sourceId!, name, payload)
-          : await forkResumeAction(sourceId!, name, payload);
+      const result =
+        mode === 'create'
+          ? await createResumeAction(name, payload)
+          : mode === 'edit'
+            ? await editResumeAction(sourceId!, name, payload)
+            : await forkResumeAction(sourceId!, name, payload);
 
-    router.push(`/resumes/${result.id}`);
+      router.push(`/resumes/${result.id}`);
+    } catch (err) {
+      setSubmitting(false);
+      throw err;
+    }
   }
 
   return (
@@ -292,7 +299,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
       <Button
         type="button"
         onClick={handleSubmit}
-        disabled={!name.trim() || hasNoItems || unchanged}
+        disabled={!name.trim() || hasNoItems || unchanged || submitting}
         className="self-start"
         title={
           !name.trim()
@@ -304,7 +311,7 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
                 : undefined
         }
       >
-        {mode === 'create' ? 'Done' : mode === 'edit' ? 'Save' : 'Save fork'}
+        {submitting ? 'Saving…' : mode === 'create' ? 'Done' : mode === 'edit' ? 'Save' : 'Save fork'}
       </Button>
     </div>
   );
