@@ -234,20 +234,24 @@ export function ResumeForm({ mode, sourceId, initialName = '', initialSections =
                       triggerLabel="✎"
                       defer
                     />
-                    <ObjectPickerModal
-                      type={section.sectionType}
-                      forkFrom={{
-                        objectId: item.objectId,
-                        id: item.objectRevisionId,
-                        body: item.body,
-                        fields: item.fields,
-                        tags: item.tags,
-                        versionNumber: item.versionNumber ?? 0,
-                      }}
-                      onPick={(picked) => addItem(section.sectionType, toItem(picked))}
-                      triggerLabel="⧉"
-                      defer
-                    />
+                    {/* Duplicate needs a real underlying object to fork from — a still-unsaved
+                        "create" draft has none yet, so there's nothing to offer here. */}
+                    {item.objectId && (
+                      <ObjectPickerModal
+                        type={section.sectionType}
+                        forkFrom={{
+                          objectId: item.objectId,
+                          id: item.objectRevisionId,
+                          body: item.body,
+                          fields: item.fields,
+                          tags: item.tags,
+                          versionNumber: item.versionNumber ?? 0,
+                        }}
+                        onPick={(picked) => addItem(section.sectionType, toItem(picked))}
+                        triggerLabel="⧉"
+                        defer
+                      />
+                    )}
                   </div>
                 }
               />
