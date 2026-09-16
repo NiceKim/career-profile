@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Pencil, Plus } from 'lucide-react';
-import { createObjectAction, editObjectAction, getObjectHistoryAction } from '@/app/objects/actions';
+import { Copy, Pencil, Plus } from 'lucide-react';
+import { createObjectAction, editObjectAction, forkObjectVariationAction, getObjectHistoryAction } from '@/app/objects/actions';
 import type { ObjectType } from '@/lib/objects/schemas';
 import { FIELDS_BY_TYPE } from '@/lib/objects/fieldConfig';
 import { ObjectVersionChip } from './ObjectVersionChip';
@@ -12,14 +12,25 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 
+// Describes how to turn a staged (not-yet-written) object into a real DB row once the
+// caller is ready to commit it — see the `defer` prop.
+export type ObjectDraft =
+  | { kind: 'create'; type: ObjectType }
+  | { kind: 'edit'; sourceRevisionId: string }
+  | { kind: 'fork'; objectId: string };
+
 type ObjectSummary = {
   id: string;
-  rootVersionId?: string;
+  objectId?: string;
+  objectVariationId?: string;
   body: string;
   versionNumber: number;
   fields?: unknown;
   tags?: string[];
   createdAt?: string | Date;
+  // Present when this object hasn't been written to the DB yet — onPick receives a
+  // client-only placeholder instead of a real saved row.
+  draft?: ObjectDraft;
 };
 
 function parseTags(raw: FormDataEntryValue | null): string[] {
@@ -36,13 +47,21 @@ type Props = {
   // display state (body/fields/tags) without a stale copy or a follow-up fetch.
   onPick: (picked: ObjectSummary) => void;
   triggerLabel?: string;
-  editingRootVersionId?: string;
-  // Prefills the form from this version's fields/body/tags. Submitting saves a new version
-  // of this same object (same rootVersionId) via editObjectAction — an edit-in-place, not a copy.
+  editingObjectVariationId?: string;
+  // Prefills the form from this revision's fields/body/tags. Submitting saves a new
+  // revision of this same variation via editObjectAction — an edit-in-place, not a copy.
   prefillFrom?: ObjectSummary;
-  // Fires when the plain "recent picker" view opens (not the editingRootVersionId browse view,
-  // which already fetches on open). Lets a caller lazy-load recentObjects on first open.
+  // Prefills the form from this revision's content but submits via forkObjectVariationAction,
+  // starting a brand-new variation under the same object (requires forkFrom.objectId).
+  forkFrom?: ObjectSummary;
+  // Fires when the plain "recent picker" view opens (not the editingObjectVariationId browse
+  // view, which already fetches on open). Lets a caller lazy-load recentObjects on first open.
   onOpen?: () => void;
+  // When true, submitting the create/edit/fork form never touches the DB — onPick receives
+  // a client-only draft (with enough info to resolve it later) instead of a saved row. Used
+  // by ResumeForm: object changes made while authoring a resume are staged, only written
+  // when the resume itself is submitted.
+  defer?: boolean;
 };
 
 export function ObjectPickerModal({
@@ -50,24 +69,26 @@ export function ObjectPickerModal({
   recentObjects = [],
   onPick,
   triggerLabel = '+ Object',
-  editingRootVersionId,
+  editingObjectVariationId,
   prefillFrom,
+  forkFrom,
   onOpen,
+  defer = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<'recent' | 'allVersions'>('recent');
   const [allVersions, setAllVersions] = useState<ObjectSummary[]>([]);
 
-  async function openAllVersions(rootVersionId: string) {
-    setAllVersions(await getObjectHistoryAction(rootVersionId));
+  async function openAllVersions(objectVariationId: string) {
+    setAllVersions(await getObjectHistoryAction(objectVariationId));
     setView('allVersions');
   }
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) return;
-    if (editingRootVersionId) {
-      openAllVersions(editingRootVersionId);
+    if (editingObjectVariationId) {
+      openAllVersions(editingObjectVariationId);
     } else {
       setView('recent');
       onOpen?.();
@@ -79,15 +100,18 @@ export function ObjectPickerModal({
     setOpen(false);
   }
 
-  const prefillFields = (prefillFrom?.fields as Record<string, unknown> | undefined) ?? {};
+  const prefillContent = forkFrom ?? prefillFrom;
+  const prefillFields = (prefillContent?.fields as Record<string, unknown> | undefined) ?? {};
   const isIconTrigger = triggerLabel.length <= 2;
+  const dialogTitle = forkFrom ? `New Variation — ${type}` : prefillFrom ? `Edit ${type}` : `Add Object — ${type}`;
+  const submitLabel = forkFrom ? 'Save' : prefillFrom ? 'Save' : 'Create';
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
-          <Button type="button" variant={isIconTrigger ? 'ghost' : 'secondary'} size={isIconTrigger ? 'icon' : 'sm'} aria-label={triggerLabel === '✎' ? 'Edit' : triggerLabel === '→' ? 'See all versions' : undefined}>
-            {triggerLabel === '✎' ? <Pencil className="size-3.5" /> : triggerLabel === '+ Object' ? (
+          <Button type="button" variant={isIconTrigger ? 'ghost' : 'secondary'} size={isIconTrigger ? 'icon' : 'sm'} aria-label={triggerLabel === '✎' ? 'Edit' : triggerLabel === '→' ? 'See all versions' : triggerLabel === '⧉' ? 'New Variation' : undefined}>
+            {triggerLabel === '✎' ? <Pencil className="size-3.5" /> : triggerLabel === '⧉' ? <Copy className="size-3.5" /> : triggerLabel === '+ Object' ? (
               <>
                 <Plus className="size-3.5" /> Object
               </>
@@ -100,8 +124,8 @@ export function ObjectPickerModal({
       <DialogContent>
         {view === 'recent' && (
           <>
-            <DialogTitle>{prefillFrom ? `Edit ${type}` : `Add Object — ${type}`}</DialogTitle>
-            {!prefillFrom && recentObjects.length > 0 && (
+            <DialogTitle>{dialogTitle}</DialogTitle>
+            {!prefillContent && recentObjects.length > 0 && (
               <fieldset className="mt-4 flex flex-col gap-2 rounded-none border-0 p-0">
                 <legend className="mb-1 p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">Recent objects</legend>
                 <div className="flex flex-wrap gap-2">
@@ -117,7 +141,7 @@ export function ObjectPickerModal({
                           type="button"
                           variant="ghost"
                           size="icon"
-                          onClick={() => o.rootVersionId && openAllVersions(o.rootVersionId)}
+                          onClick={() => o.objectVariationId && openAllVersions(o.objectVariationId)}
                           aria-label="See all versions"
                         >
                           <Plus className="size-3.5" />
@@ -130,7 +154,7 @@ export function ObjectPickerModal({
             )}
             <fieldset className="mt-4 flex flex-col gap-3 rounded-none border-0 p-0">
               <legend className="mb-1 p-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                {prefillFrom ? 'Edit fields, then save' : 'or create new'}
+                {prefillContent ? 'Edit fields, then save' : 'or create new'}
               </legend>
               <form
                 className="flex max-w-none flex-col gap-3 mb-0"
@@ -140,9 +164,36 @@ export function ObjectPickerModal({
                   );
                   const body = String(formData.get('body'));
                   const tags = parseTags(formData.get('tags'));
-                  const saved = prefillFrom
-                    ? await editObjectAction(prefillFrom.id, fields, body, tags)
-                    : await createObjectAction(type, fields, body, tags);
+
+                  if (defer) {
+                    // Re-staging an already-staged draft resolves against its *original*
+                    // target, not the placeholder id of the not-yet-saved edit itself —
+                    // otherwise a second edit before submit would try to edit a row that
+                    // doesn't exist yet.
+                    const draft: ObjectDraft = forkFrom
+                      ? { kind: 'fork', objectId: forkFrom.objectId! }
+                      : prefillFrom
+                        ? prefillFrom.draft ?? { kind: 'edit', sourceRevisionId: prefillFrom.id }
+                        : { kind: 'create', type };
+                    pick({
+                      id: crypto.randomUUID(),
+                      objectId: forkFrom ? forkFrom.objectId : prefillFrom?.objectId,
+                      objectVariationId: forkFrom ? undefined : prefillFrom?.objectVariationId,
+                      versionNumber: 0,
+                      fields,
+                      body,
+                      tags,
+                      createdAt: new Date().toISOString(),
+                      draft,
+                    });
+                    return;
+                  }
+
+                  const saved = forkFrom
+                    ? await forkObjectVariationAction(forkFrom.objectId!, fields, body, tags)
+                    : prefillFrom
+                      ? await editObjectAction(prefillFrom.id, fields, body, tags)
+                      : await createObjectAction(type, fields, body, tags);
                   pick(saved);
                 }}
               >
@@ -160,14 +211,14 @@ export function ObjectPickerModal({
                 ))}
                 <div className="flex flex-col gap-1">
                   <Label htmlFor="body">Markdown content</Label>
-                  <Textarea id="body" name="body" required defaultValue={prefillFrom?.body ?? ''} />
+                  <Textarea id="body" name="body" required defaultValue={prefillContent?.body ?? ''} />
                 </div>
                 <div className="flex flex-col gap-1">
                   <Label htmlFor="tags">Tags, comma-separated</Label>
-                  <Input id="tags" name="tags" defaultValue={prefillFrom?.tags?.join(', ') ?? ''} />
+                  <Input id="tags" name="tags" defaultValue={prefillContent?.tags?.join(', ') ?? ''} />
                 </div>
                 <Button type="submit" className="mt-1 self-start">
-                  {prefillFrom ? 'Save new version' : 'Create'}
+                  {submitLabel}
                 </Button>
               </form>
             </fieldset>
@@ -183,12 +234,17 @@ export function ObjectPickerModal({
                   key={v.id}
                   type={type}
                   version={v}
-                  onClick={editingRootVersionId ? undefined : () => pick(v)}
-                  editTrigger={<ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" />}
+                  onClick={editingObjectVariationId ? undefined : () => pick(v)}
+                  editTrigger={
+                    <div className="flex gap-1">
+                      <ObjectPickerModal type={type} prefillFrom={v} onPick={onPick} triggerLabel="✎" defer={defer} />
+                      <ObjectPickerModal type={type} forkFrom={v} onPick={onPick} triggerLabel="⧉" defer={defer} />
+                    </div>
+                  }
                 />
               ))}
             </div>
-            {!editingRootVersionId && (
+            {!editingObjectVariationId && (
               <Button type="button" variant="secondary" size="sm" className="mt-4" onClick={() => setView('recent')}>
                 ← Back
               </Button>

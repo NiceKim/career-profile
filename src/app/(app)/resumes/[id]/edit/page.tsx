@@ -15,13 +15,14 @@ export default async function EditResumePage({ params }: { params: Promise<{ id:
       initialSections={resume.sections.map((s) => ({
         sectionType: s.sectionType,
         items: s.items.map((it) => ({
-          objectVersionId: it.objectVersionId,
-          body: it.objectVersion.body,
-          fields: it.objectVersion.fields,
-          tags: it.objectVersion.tags,
-          rootVersionId: it.objectVersion.rootVersionId,
-          versionNumber: it.objectVersion.versionNumber,
-          createdAt: it.objectVersion.createdAt,
+          objectRevisionId: it.objectRevisionId,
+          objectId: it.objectRevision.objectId,
+          body: it.objectRevision.body,
+          fields: it.objectRevision.fields,
+          tags: it.objectRevision.tags,
+          objectVariationId: it.objectRevision.objectVariationId,
+          versionNumber: it.objectRevision.versionNumber,
+          createdAt: it.objectRevision.createdAt,
         })),
       }))}
       versionInfo={`Editing from v${resume.id.slice(0, 8)}`}

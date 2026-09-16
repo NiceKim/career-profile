@@ -2,7 +2,7 @@ import { getCurrentUserId } from '@/lib/session';
 import { getResumeVersionWithContent } from '@/lib/resumes/queries';
 import { HistoryTab } from './HistoryTab';
 import { ObjectVersionChip } from '@/components/ObjectVersionChip';
-import type { ObjectType } from '@/lib/objects/schemas';
+import { ObjectHistoryModal } from '@/components/ObjectHistoryModal';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -57,15 +57,23 @@ export default async function ViewResumePage({
         resume.sections.map((section) => (
           <div key={section.id} className="flex flex-col gap-2">
             <h2 className="my-0 font-mono text-xs font-medium uppercase tracking-widest text-muted-foreground">{section.sectionType}</h2>
-            <div className="grid grid-cols-2 gap-3 rounded-xl border border-dashed border-border p-3">
+            <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border p-3">
               {section.items.map((item) => (
-                <ObjectVersionChip key={item.id} type={item.objectVersion.type as ObjectType} version={item.objectVersion} />
+                <ObjectHistoryModal
+                  key={item.id}
+                  type={section.sectionType}
+                  objectVariationId={item.objectRevision.objectVariationId}
+                  highlightRevisionId={item.objectRevisionId}
+                  trigger={<ObjectVersionChip type={section.sectionType} version={item.objectRevision} />}
+                />
               ))}
             </div>
           </div>
         ))}
 
-      {tab === 'history' && <HistoryTab userId={userId} rootVersionId={resume.rootVersionId} currentId={resume.id} />}
+      {tab === 'history' && (
+        <HistoryTab userId={userId} resumeId={resume.resumeId} resumeName={resume.name} currentId={resume.id} />
+      )}
     </div>
   );
 }

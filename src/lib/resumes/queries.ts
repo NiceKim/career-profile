@@ -1,75 +1,84 @@
 import { prisma } from '@/lib/prisma';
 
 export async function getLatestVersionsForUser(userId: string) {
-  const versions = await prisma.resumeVersion.findMany({
+  const resumes = await prisma.resume.findMany({
     where: { ownerUserId: userId },
-    orderBy: { createdAt: 'desc' },
+    include: { revisions: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
-  const seenRoots = new Set<string>();
-  const latest = [];
-  for (const v of versions) {
-    if (!seenRoots.has(v.rootVersionId)) {
-      seenRoots.add(v.rootVersionId);
-      latest.push(v);
-    }
-  }
-  return latest;
+  return resumes.map((r) => r.revisions[0]);
 }
 
-export async function getResumeTreeHistory(userId: string, rootVersionId: string) {
-  return prisma.resumeVersion.findMany({
-    where: { ownerUserId: userId, rootVersionId },
+export async function getResumeTreeHistory(userId: string, resumeId: string) {
+  return prisma.resumeRevision.findMany({
+    where: { resumeId, resume: { ownerUserId: userId } },
     orderBy: { createdAt: 'asc' },
   });
 }
 
-export async function getResumeVersionWithContent(userId: string, id: string) {
-  const resume = await prisma.resumeVersion.findUnique({
-    where: { id },
-    include: { sections: true, items: { include: { objectVersion: true } } },
+export async function getResumeVersionWithContent(userId: string, resumeRevisionId: string) {
+  const revision = await prisma.resumeRevision.findUnique({
+    where: { id: resumeRevisionId },
+    include: {
+      resume: true,
+      sections: {
+        orderBy: { order: 'asc' },
+        include: {
+          items: {
+            orderBy: { order: 'asc' },
+            include: { objectRevision: { include: { objectVariation: { include: { object: true } } } } },
+          },
+        },
+      },
+    },
   });
-  if (!resume) throw new Error('Resume version not found');
-  if (resume.ownerUserId !== userId) throw new Error('Not authorized');
+  if (!revision) throw new Error('Resume revision not found');
+  if (revision.resume.ownerUserId !== userId) throw new Error('Not authorized');
 
-  // Section membership isn't stored on the item — match by the referenced object's type.
-  const sections = [...resume.sections]
-    .sort((a, b) => a.order - b.order)
-    .map((section) => ({
-      ...section,
-      items: resume.items
-        .filter((item) => item.objectVersion.type === section.sectionType)
-        .sort((a, b) => a.order - b.order),
-    }));
-
-  return { ...resume, sections };
+  return {
+    id: revision.id,
+    resumeId: revision.resumeId,
+    name: revision.resume.name,
+    createdAt: revision.createdAt,
+    // Section membership is a real FK now — no more matching items to sections by
+    // the referenced object's type at render time.
+    sections: revision.sections.map((section) => ({
+      id: section.id,
+      sectionType: section.sectionType,
+      items: section.items.map((item) => ({
+        id: item.id,
+        objectRevisionId: item.objectRevisionId,
+        objectRevision: {
+          id: item.objectRevision.id,
+          objectId: item.objectRevision.objectVariation.object.id,
+          body: item.objectRevision.body,
+          fields: item.objectRevision.fields,
+          tags: item.objectRevision.objectVariation.tags,
+          objectVariationId: item.objectRevision.objectVariationId,
+          versionNumber: item.objectRevision.versionNumber,
+          createdAt: item.objectRevision.createdAt,
+        },
+      })),
+    })),
+  };
 }
 
 export async function getResumeForest(userId: string) {
-  const versions = await prisma.resumeVersion.findMany({ where: { ownerUserId: userId } });
+  const resumes = await prisma.resume.findMany({
+    where: { ownerUserId: userId },
+    include: { revisions: { orderBy: { createdAt: 'desc' }, take: 1 } },
+  });
 
-  // Map every version id to the rootVersionId of the tree it belongs to,
-  // so a cross-tree parentVersionId can be resolved back to a tree.
-  const idToRoot = new Map(versions.map((v) => [v.id, v.rootVersionId]));
-
-  const trees = new Map<string, typeof versions>();
-  for (const v of versions) {
-    const group = trees.get(v.rootVersionId) ?? [];
-    group.push(v);
-    trees.set(v.rootVersionId, group);
-  }
-
-  return Array.from(trees.entries()).map(([rootVersionId, group]) => {
-    const head = group.reduce((latest, v) => (v.createdAt > latest.createdAt ? v : latest));
-    const forkedFromRootVersionId = head.parentVersionId
-      ? idToRoot.get(head.parentVersionId) ?? null
-      : null;
-
+  // `parentVersionId` points straight at the source Resume's id now, so unlike the
+  // old cross-tree-pointer-to-a-specific-version design, there's no id-to-tree
+  // resolution needed here at all.
+  return resumes.map((resume) => {
+    const head = resume.revisions[0];
     return {
-      rootVersionId,
+      resumeId: resume.id,
       headVersionId: head.id,
-      name: head.name,
+      name: resume.name,
       headCreatedAt: head.createdAt,
-      forkedFromRootVersionId,
+      forkedFromResumeId: resume.parentVersionId,
     };
   });
 }

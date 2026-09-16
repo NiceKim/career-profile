@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '@/lib/prisma';
 import { resetDb } from '../../../test/db';
-import { createObjectVersion, editObjectVersion } from './versioning';
+import { createObject, editObjectRevision, forkObjectVariation } from './versioning';
 
 describe('object versioning', () => {
   beforeEach(resetDb);
@@ -10,46 +10,67 @@ describe('object versioning', () => {
     return prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
   }
 
-  it('creates a first version whose rootVersionId equals its own id', async () => {
+  it('creates an object with one variation and one revision at version 1', async () => {
     const user = await makeUser();
-    const v1 = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python, TypeScript');
-    expect(v1.rootVersionId).toBe(v1.id);
+    const v1 = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'Python, TypeScript');
     expect(v1.versionNumber).toBe(1);
+    expect(v1.objectId).not.toBe(v1.objectVariationId);
+    expect(v1.objectVariationId).not.toBe(v1.id);
   });
 
   it('stores tags passed on create, defaulting to an empty list', async () => {
     const user = await makeUser();
-    const tagged = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Go', ['Backend']);
-    const untagged = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'React');
+    const tagged = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'Go', ['Backend']);
+    const untagged = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'React');
     expect(tagged.tags).toEqual(['Backend']);
     expect(untagged.tags).toEqual([]);
   });
 
-  it('edit creates a new version under the same rootVersionId', async () => {
+  it('edit creates a new revision under the same variation', async () => {
     const user = await makeUser();
-    const v1 = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
-    const v2 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript', ['Backend', 'AI']);
-    expect(v2.rootVersionId).toBe(v1.rootVersionId);
+    const v1 = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const v2 = await editObjectRevision(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript', ['Backend', 'AI']);
+    expect(v2.objectVariationId).toBe(v1.objectVariationId);
     expect(v2.versionNumber).toBe(2);
     expect(v2.id).not.toBe(v1.id);
     expect(v2.tags).toEqual(['Backend', 'AI']);
   });
 
-  it('editing a stale (non-head) version numbers off the current latest, not the edited-from version', async () => {
+  it('editing a stale (non-head) revision numbers off the current latest, not the edited-from revision', async () => {
     const user = await makeUser();
-    const v1 = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
-    const v2 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
-    const v3 = await editObjectVersion(user.id, v1.id, { category: 'Languages' }, 'Python, Go');
-    expect(v3.rootVersionId).toBe(v1.rootVersionId);
+    const v1 = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const v2 = await editObjectRevision(user.id, v1.id, { category: 'Languages' }, 'Python, TypeScript');
+    const v3 = await editObjectRevision(user.id, v1.id, { category: 'Languages' }, 'Python, Go');
+    expect(v3.objectVariationId).toBe(v1.objectVariationId);
     expect(v3.versionNumber).toBe(v2.versionNumber + 1);
   });
 
-  it('rejects editing a version owned by another user', async () => {
+  it('rejects editing a revision owned by another user', async () => {
     const owner = await makeUser();
     const attacker = await prisma.user.create({ data: { email: 'b@example.com', passwordHash: 'x' } });
-    const v1 = await createObjectVersion(owner.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const v1 = await createObject(owner.id, 'SKILLS', { category: 'Languages' }, 'Python');
     await expect(
-      editObjectVersion(attacker.id, v1.id, { category: 'Languages' }, 'hacked')
+      editObjectRevision(attacker.id, v1.id, { category: 'Languages' }, 'hacked')
+    ).rejects.toThrow('Not authorized');
+  });
+
+  it('new variation starts its own history under the same object', async () => {
+    const user = await makeUser();
+    const v1 = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const variation2 = await forkObjectVariation(user.id, v1.objectId, { category: 'Languages' }, 'Go', ['Backend']);
+
+    expect(variation2.objectId).toBe(v1.objectId);
+    expect(variation2.objectVariationId).not.toBe(v1.objectVariationId);
+    expect(variation2.versionNumber).toBe(1);
+    expect(variation2.tags).toEqual(['Backend']);
+  });
+
+  it('rejects forking a variation for an object owned by another user', async () => {
+    const owner = await makeUser();
+    const attacker = await prisma.user.create({ data: { email: 'b@example.com', passwordHash: 'x' } });
+    const v1 = await createObject(owner.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    await expect(
+      forkObjectVariation(attacker.id, v1.objectId, { category: 'Languages' }, 'hacked')
     ).rejects.toThrow('Not authorized');
   });
 });

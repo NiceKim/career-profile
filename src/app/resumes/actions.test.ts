@@ -15,31 +15,31 @@ describe('resume actions', () => {
 
     const result = await createResumeAction('My Resume');
 
-    const stored = await prisma.resumeVersion.findUnique({ where: { id: result.id } });
-    expect(stored?.ownerUserId).toBe(user.id);
+    const stored = await prisma.resumeRevision.findUnique({ where: { id: result.id }, include: { resume: true } });
+    expect(stored?.resume.ownerUserId).toBe(user.id);
   });
 
-  it('fork action creates a new tree linked to the source', async () => {
+  it('fork action creates a new resume linked to the source', async () => {
     const user = await prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
     vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
     const original = await createResumeAction('Original');
 
     const fork = await forkResumeAction(original.id, 'Forked', []);
 
-    const stored = await prisma.resumeVersion.findUnique({ where: { id: fork.id } });
-    expect(stored?.parentVersionId).toBe(original.id);
-    expect(stored?.rootVersionId).toBe(fork.id);
+    const stored = await prisma.resumeRevision.findUnique({ where: { id: fork.id }, include: { resume: true } });
+    const originalStored = await prisma.resumeRevision.findUnique({ where: { id: original.id } });
+    expect(stored?.resume.parentVersionId).toBe(originalStored?.resumeId);
   });
 
-  it('edit action creates a new version in the same tree', async () => {
+  it('edit action creates a new revision on the same resume', async () => {
     const user = await prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
     vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
     const original = await createResumeAction('Original');
 
     const edited = await editResumeAction(original.id, 'Renamed', []);
 
-    const stored = await prisma.resumeVersion.findUnique({ where: { id: edited.id } });
-    expect(stored?.name).toBe('Renamed');
+    const stored = await prisma.resumeRevision.findUnique({ where: { id: edited.id }, include: { resume: true } });
+    expect(stored?.resume.name).toBe('Renamed');
   });
 
   it('rejects editing a resume owned by another user', async () => {

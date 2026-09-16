@@ -4,7 +4,15 @@ import { resetDb } from '../../../test/db';
 
 vi.mock('@/lib/session', () => ({ getCurrentUserId: vi.fn() }));
 import { getCurrentUserId } from '@/lib/session';
-import { createObjectAction, editObjectAction, listLatestObjectsAction, getObjectHistoryAction } from './actions';
+import { createResumeAction } from '@/app/resumes/actions';
+import {
+  createObjectAction,
+  editObjectAction,
+  forkObjectVariationAction,
+  listLatestObjectsAction,
+  getObjectHistoryAction,
+  getObjectVariationUsageAction,
+} from './actions';
 
 describe('object actions', () => {
   beforeEach(resetDb);
@@ -15,7 +23,7 @@ describe('object actions', () => {
 
     const result = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
 
-    const stored = await prisma.objectVersion.findUnique({ where: { id: result.id } });
+    const stored = await prisma.resumeObject.findUnique({ where: { id: result.objectId } });
     expect(stored?.ownerUserId).toBe(user.id);
   });
 
@@ -27,15 +35,14 @@ describe('object actions', () => {
     );
   });
 
-  it('edit action creates a new version via the current session user', async () => {
+  it('edit action creates a new revision via the current session user', async () => {
     const user = await prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
     vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
     const created = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
 
     const edited = await editObjectAction(created.id, { category: 'Languages' }, 'Python, TypeScript');
 
-    const stored = await prisma.objectVersion.findUnique({ where: { id: edited.id } });
-    expect(stored?.versionNumber).toBe(2);
+    expect(edited.versionNumber).toBe(2);
   });
 
   it('passes tags through on create and edit', async () => {
@@ -45,8 +52,20 @@ describe('object actions', () => {
 
     const edited = await editObjectAction(created.id, { category: 'Languages' }, 'Go', ['Backend', 'AI']);
 
-    const stored = await prisma.objectVersion.findUnique({ where: { id: edited.id } });
-    expect(stored?.tags).toEqual(['Backend', 'AI']);
+    expect(edited.tags).toEqual(['Backend', 'AI']);
+  });
+
+  it('forkObjectVariationAction creates a new variation scoped to the current session user', async () => {
+    const user = await prisma.user.create({ data: { email: 'u4@example.com', passwordHash: 'x' } });
+    vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
+    const created = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
+
+    const forked = await forkObjectVariationAction(created.objectId, { category: 'Languages' }, 'Go', ['Backend']);
+
+    expect(forked.objectId).toBe(created.objectId);
+    expect(forked.objectVariationId).not.toBe(created.objectVariationId);
+    const stored = await prisma.objectRevision.findUnique({ where: { id: forked.id } });
+    expect(stored?.body).toBe('Go');
   });
 
   it('listLatestObjectsAction scopes to the current session user', async () => {
@@ -58,13 +77,25 @@ describe('object actions', () => {
     expect(result).toHaveLength(1);
   });
 
-  it('getObjectHistoryAction returns every version for the given root', async () => {
+  it('getObjectHistoryAction returns every revision for the given variation', async () => {
     const user = await prisma.user.create({ data: { email: 'u3@example.com', passwordHash: 'x' } });
     vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
     const created = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
     await editObjectAction(created.id, { category: 'Languages' }, 'Python, TypeScript');
 
-    const history = await getObjectHistoryAction(created.id);
+    const history = await getObjectHistoryAction(created.objectVariationId);
     expect(history).toHaveLength(2);
+  });
+
+  it('getObjectVariationUsageAction lists resumes using any revision, with the version each uses', async () => {
+    const user = await prisma.user.create({ data: { email: 'u5@example.com', passwordHash: 'x' } });
+    vi.mocked(getCurrentUserId).mockResolvedValue(user.id);
+    const created = await createObjectAction('SKILLS', { category: 'Languages' }, 'Python');
+    await createResumeAction('My Resume', [
+      { sectionType: 'SKILLS', order: 0, items: [{ objectRevisionId: created.id, order: 0 }] },
+    ]);
+
+    const usage = await getObjectVariationUsageAction(created.objectVariationId);
+    expect(usage).toEqual([{ resumeName: 'My Resume', resumeRevisionId: expect.any(String), versionNumber: 1 }]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { prisma } from '@/lib/prisma';
 import { resetDb } from '../../../test/db';
-import { createObjectVersion } from '../objects/versioning';
+import { createObject } from '../objects/versioning';
 import { createResumeFromScratch, editResume, forkResume } from './versioning';
 import { getLatestVersionsForUser, getResumeVersionWithContent, getResumeForest, getResumeTreeHistory } from './queries';
 
@@ -12,7 +12,7 @@ describe('resume queries', () => {
     return prisma.user.create({ data: { email: 'u@example.com', passwordHash: 'x' } });
   }
 
-  it('returns exactly one (the head) version per tree', async () => {
+  it('returns exactly one (the head) revision per resume', async () => {
     const user = await makeUser();
     const v1 = await createResumeFromScratch(user.id, 'Original');
     const v2 = await editResume(user.id, v1.id, 'v2', []);
@@ -25,7 +25,7 @@ describe('resume queries', () => {
     expect(latest.map((r) => r.id)).not.toContain(v1.id);
   });
 
-  it('a version edited from an older sibling still counts as the latest for its tree', async () => {
+  it('a revision edited from an older sibling still counts as the latest for its resume', async () => {
     const user = await makeUser();
     const v1 = await createResumeFromScratch(user.id, 'Original');
     const v2 = await editResume(user.id, v1.id, 'v2', []);
@@ -40,39 +40,39 @@ describe('resume queries', () => {
 
   it('returns full content with sections and items', async () => {
     const user = await makeUser();
-    const skill = await createObjectVersion(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
+    const skill = await createObject(user.id, 'SKILLS', { category: 'Languages' }, 'Python');
     const resume = await editResume(
       user.id,
       (await createResumeFromScratch(user.id, 'Original')).id,
       undefined,
-      [{ sectionType: 'SKILLS', order: 0, items: [{ objectVersionId: skill.id, order: 0 }] }]
+      [{ sectionType: 'SKILLS', order: 0, items: [{ objectRevisionId: skill.id, order: 0 }] }]
     );
 
     const content = await getResumeVersionWithContent(user.id, resume.id);
 
-    expect(content.sections[0].items[0].objectVersionId).toBe(skill.id);
+    expect(content.sections[0].items[0].objectRevision.id).toBe(skill.id);
   });
 
-  it('returns every version in one tree, oldest first', async () => {
+  it('returns every revision of one resume, oldest first', async () => {
     const user = await makeUser();
     const v1 = await createResumeFromScratch(user.id, 'Original');
     const v2 = await editResume(user.id, v1.id, 'v2', []);
 
-    const history = await getResumeTreeHistory(user.id, v1.rootVersionId);
+    const history = await getResumeTreeHistory(user.id, v1.resumeId);
     expect(history.map((v) => v.id)).toEqual([v1.id, v2.id]);
   });
 
-  it('builds a forest with a fork edge to the source tree', async () => {
+  it('builds a forest with a fork edge to the source resume', async () => {
     const user = await makeUser();
     const original = await createResumeFromScratch(user.id, 'Original');
     const fork = await forkResume(user.id, original.id, 'Forked', []);
 
     const forest = await getResumeForest(user.id);
 
-    const forkTree = forest.find((t) => t.rootVersionId === fork.rootVersionId);
-    expect(forkTree?.forkedFromRootVersionId).toBe(original.rootVersionId);
+    const forkTree = forest.find((t) => t.resumeId === fork.resumeId);
+    expect(forkTree?.forkedFromResumeId).toBe(original.resumeId);
 
-    const originalTree = forest.find((t) => t.rootVersionId === original.rootVersionId);
-    expect(originalTree?.forkedFromRootVersionId).toBeNull();
+    const originalTree = forest.find((t) => t.resumeId === original.resumeId);
+    expect(originalTree?.forkedFromResumeId).toBeNull();
   });
 });

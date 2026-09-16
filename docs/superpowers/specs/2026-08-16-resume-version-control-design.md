@@ -42,18 +42,21 @@ flowchart LR
 
 Two decisions shape this model, both applied consistently:
 
-1. **No separate "identity" tables.** A `resumes` table and an `objects` table were considered and dropped — each version row carries its own identity via self-referencing id columns, collapsing "identity + history" into one table per concept.
-2. **Objects have three identity levels; resumes have two.** An object (e.g. "my Google work experience") can have multiple **variations** — tailored rewrites for different scenarios (a backend-flavored write-up vs. a frontend-flavored one) — and each variation has its own **linear** edit history. Objects still never form a parent/child tree (neither across variations nor within one variation's history) — so `object_versions` needs `originVersionId` (never reassigned after the object's true creation — the anchor tying all variations of the same object together) *in addition to* `rootVersionId` (resets when a new variation is forked; scopes one variation's own linear edit history, same resetting rule as resume's `rootVersionId` resetting per tree). Resumes only fork at the tree level, so `resume_versions` needs `parentVersionId` (the fork lineage edge) on top of `rootVersionId` — no third id, since resumes don't have an object-like umbrella above the tree.
+1. **Identity is split from history via real foreign keys, not self-referencing columns.** Objects and resumes each have a dedicated identity table (`OBJECT`, `RESUME`) separate from their history table(s) — no version row doubles as its own identity anchor.
+2. **Objects have three identity levels; resumes have two.** An `OBJECT` (e.g. "my Google work experience") can have multiple **variations** — tailored rewrites for different scenarios (a backend-flavored write-up vs. a frontend-flavored one) — each an `OBJECT_VARIATION` row with its own **linear** history of `OBJECT_REVISION` rows. Objects never form a parent/child tree at any level. A `RESUME` is a tree/identity on its own (no umbrella level above it), with a linear history of `RESUME_REVISION` rows; `RESUME.parentVersionId` records the resume a fork started from, fixed once at fork time.
 
 ```mermaid
 erDiagram
     USER ||--o| PROFILE : has
-    USER ||--o{ OBJECT_VERSION : owns
-    USER ||--o{ RESUME_VERSION : owns
-    RESUME_VERSION ||--o{ RESUME_VERSION_SECTION : has
-    RESUME_VERSION_SECTION ||--o{ SECTION_OBJECT : has
-    SECTION_OBJECT }o--|| OBJECT_VERSION : references
-    RESUME_VERSION ||--o{ RESUME_VERSION : parentVersionId
+    USER ||--o{ OBJECT : owns
+    USER ||--o{ RESUME : owns
+    RESUME ||--o{ RESUME_REVISION : has
+    OBJECT ||--o{ OBJECT_VARIATION : has
+    OBJECT_VARIATION ||--o{ OBJECT_REVISION : has
+    RESUME_REVISION ||--o{ RESUME_SECTION : has
+    RESUME_SECTION ||--o{ SECTION_OBJECT : has
+    SECTION_OBJECT }o--|| OBJECT_REVISION : references
+    RESUME ||--o{ RESUME : parentVersionId
 
     USER {
         uuid id
@@ -70,67 +73,78 @@ erDiagram
         string location
         jsonb links "LinkedIn/portfolio/GitHub etc."
     }
-    OBJECT_VERSION {
+    OBJECT {
         uuid id
-        uuid originVersionId "self if this is a new object; the object this variation belongs to, never reassigned"
-        uuid rootVersionId "self if this is a new variation (fork); root of this variation's own linear history"
         uuid ownerUserId
         enum type "WorkExperience|Education|Skills|Summary|Project|Certification|Extracurricular"
-        int versionNumber
+    }
+    OBJECT_VARIATION {
+        uuid id
+        uuid objectId
+        string[] tags "freeform, e.g. Backend/Frontend/AI"
+    }
+    OBJECT_REVISION {
+        uuid id
+        uuid objectVariationId
         jsonb fields "type-specific, validated by a Zod schema per type"
         text body "markdown"
-        string[] tags "freeform, e.g. Backend/Frontend/AI"
+        int versionNumber
         timestamp createdAt
     }
-    RESUME_VERSION {
+    RESUME {
         uuid id
-        uuid rootVersionId "self if this is a new resume (incl. forks)"
         uuid parentVersionId "nullable; the version this tree was forked from — unchanged by edits within the tree"
         uuid ownerUserId
         string name
+        string[] tags "freeform, e.g. Backend/Frontend/AI"
+    }
+    RESUME_REVISION {
+        uuid id
+        uuid resumeId
+        int versionNumber
         timestamp createdAt
     }
-    RESUME_VERSION_SECTION {
+    RESUME_SECTION {
         uuid id
-        uuid resumeVersionId
-        enum sectionType "UNIQUE with resumeVersionId - one section per type per resume"
+        uuid resumeRevisionId
+        enum sectionType "UNIQUE with resumeRevisionId - one section per type per resume"
         int order
     }
     SECTION_OBJECT {
         uuid id
-        uuid resumeVersionSectionId "the item's real, FK-enforced section membership — no more type-matching"
-        uuid objectVersionId
-        int order "UNIQUE with resumeVersionSectionId - no two items in one section share an order"
+        uuid resumeSectionId
+        uuid objectRevisionId
+        int order "UNIQUE with resumeSectionId - no two items in one section share an order"
     }
 ```
 
 **Key semantics:**
 
-- **Terminology:** an **object** (e.g. "my Google work experience") is the conceptual umbrella, identified by `originVersionId` — never a table of its own. A **variation** is one tailored branch of an object (e.g. a backend-flavored write-up vs. a frontend-flavored one), identified by `rootVersionId`, with its own linear edit history. A **(historic) version** is one row within a variation's history, identified by `id`.
-- **Editing a variation** creates a new `object_version` row: `rootVersionId` and `originVersionId` both unchanged (propagated), `versionNumber` = the variation's current highest plus one. Existing resumes keep pointing at whichever specific version they already reference.
-- **Forking a new variation** (pre-filled from an existing variation's latest content) creates a new `object_version` row that starts a new variation: `rootVersionId` = itself (new), `originVersionId` = the source variation's `originVersionId` (propagated, not reset — so it always traces back to the object's true origin no matter how many variations deep), `versionNumber` = 1.
-- The Object Dashboard groups by `originVersionId` (one card per object), with one sub-card per `rootVersionId` (variation) showing only its latest version — see Dashboards below.
+- **Terminology:** an **object** is the conceptual umbrella (`OBJECT` row). A **variation** is one tailored branch of an object (`OBJECT_VARIATION` row, `objectId` FK), with its own linear history. A **revision** is one edit within a variation's history (`OBJECT_REVISION` row, `objectVariationId` FK).
+- **Editing a variation** inserts a new `OBJECT_REVISION` under the same `objectVariationId`, with `versionNumber` = current highest plus one. Existing resumes keep pointing at whichever specific `OBJECT_REVISION` they already reference.
+- **Creating a new variation** (fork, pre-filled from an existing variation's latest revision) inserts a new `OBJECT_VARIATION` under the same `objectId`, plus its first `OBJECT_REVISION` (`versionNumber` = 1).
+- The Object Dashboard groups by `OBJECT` (one card per object), with one sub-card per `OBJECT_VARIATION` showing only its latest revision — see Dashboards below.
 
-| Entry point | `rootVersionId` | `originVersionId` | initial form content |
+| Entry point | Creates | Variation | initial form content |
 |---|---|---|---|
-| **Create** (new object from scratch) | self (new variation) | self (new object) | empty |
-| **Edit** (within a variation) | source version's `rootVersionId` (unchanged) | source version's `originVersionId` (unchanged) | pre-filled from the version being edited |
-| **New Variation** (fork within an object) | self (new variation) | source variation's `originVersionId` (propagated) | pre-filled from the source variation's latest version |
+| **Create** (new object from scratch) | `OBJECT` + `OBJECT_VARIATION` + `OBJECT_REVISION` | new | empty |
+| **Edit** (within a variation) | `OBJECT_REVISION` only | unchanged | pre-filled from the revision being edited |
+| **New Variation** (fork within an object) | `OBJECT_VARIATION` + `OBJECT_REVISION` | new (same `objectId`) | pre-filled from the source variation's latest revision |
 
-- **Editing a resume** creates a new `resume_version` row: `rootVersionId` unchanged (same tree), `parentVersionId` unchanged (inherited from the version being edited — a tree's fork origin is fixed at fork time, editing never moves it). A tree's current/"latest" version is whichever version was most recently created.
-- **Forking a resume** creates a new `resume_version` row that starts a **new tree**: `rootVersionId` = itself, `parentVersionId` = the source version (cross-tree pointer, for lineage display only — no merging back).
-- **`section_object` references `resumeVersionSectionId` directly** — real FK-enforced section membership, not derived by matching the referenced object's `type` at render time (the earlier design; dropped because it let an item silently belong to no section if its type had no match, with no constraint to catch it). `resume_version_section` is keyed by `(resumeVersionId, sectionType)` (`UNIQUE`) and can exist with zero items. `section_object` has no direct `resumeVersionId` of its own — the resume it belongs to is only reachable through its section (one hop further than before; negligible at this app's scale, and every existing read already fetched section and item data together).
-- **Write-time validation:** creating/editing/forking a resume rejects the write if any item's `objectVersion.type` doesn't match the `sectionType` of the section it's nested under — the FK makes the membership real, so a mismatch is now a representable (and therefore checked) state, where before it was structurally impossible.
-- **`(resumeVersionSectionId, order)` is `UNIQUE`** on `section_object` — no two items in the same section can share an order value.
+- **Editing a resume** inserts a new `RESUME_REVISION` under the same `resumeId`, with `versionNumber` = current highest plus one. A resume's current/"latest" revision is whichever was most recently created.
+- **Forking a resume** inserts a new `RESUME` row (`parentVersionId` = the source resume's `id`) plus its first `RESUME_REVISION`.
+- **`SECTION_OBJECT` references `resumeSectionId` and `objectRevisionId` directly** — real FK-enforced section membership. `RESUME_SECTION` is keyed by `(resumeRevisionId, sectionType)` (`UNIQUE`) and can exist with zero items.
+- **Write-time validation:** creating/editing/forking a resume rejects the write if any item's `OBJECT.type` doesn't match the `sectionType` of the section it's nested under.
+- **`(resumeSectionId, order)` is `UNIQUE`** on `SECTION_OBJECT` — no two items in the same section can share an order value.
 - **`fields` is JSONB**, validated at the application layer by a Zod schema per `type`. Every query pattern in this app fetches by ID or by `ownerUserId`; nothing filters on values inside `fields`, so a GIN/expression index can be added later if that changes.
 - **Profile** (name/email/phone/location/links, shown in a resume's header) is a single live, unversioned row per user — resumes always render the current profile.
-- **Tags** are freeform strings on `object_versions`, scoped per version — a lightweight label independent of the object/variation/version structure above (e.g. tagging a variation's latest version `Backend`). The object list page fetches every version for a user (`type` is the server-side filter) and applies tag filtering client-side. Existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`).
+- **Tags** on `OBJECT_VARIATION` are shared by every revision under that variation. `RESUME` carries its own `tags` directly. Both are freeform strings, independent of the identity/history structure above. The object list page fetches every revision (across every variation) for a user (`type` filtered server-side) and applies tag filtering client-side, using each revision's variation tags. Existing tags are surfaced as autocomplete suggestions to reduce accidental duplicates (`Backend` vs `backend`).
 
 ## Core Flows
 
-**Writing a resume version** — Create, Edit, and Fork are the same underlying write: one `resume_versions` insert + a `resume_version_sections`/`section_objects` insert, made only when the user submits — not when they click Create/Edit/Fork.
+**Writing a resume revision** — Create, Edit, and Fork all resolve to the same underlying write: a `RESUME_REVISION` insert (plus a `RESUME` insert for Create/Fork) + `RESUME_SECTION`/`SECTION_OBJECT` inserts, made only when the user submits — not when they click Create/Edit/Fork.
 
-**Editing or creating an object's content while authoring a resume is staged, not written.** Inside the resume form, adding a new object or editing an item's content only updates local form state (fields/body/tags) — no `object_versions` row exists yet. Only when the user clicks the resume's own Save does the app resolve every staged object change into a real `object_versions` insert (`createObjectVersion`/`editObjectVersion`), *then* insert the `resume_versions`/`resume_version_sections`/`section_objects` row referencing the now-real object version ids. These are two sequential phases, not one transaction (see "Error Handling" below) — but neither runs until the user submits, so navigating away from an in-progress resume edit leaves no trace in `object_versions`. This staging behavior is specific to editing objects *through* the resume form; the standalone Object Dashboard (see Dashboards below) still writes each object edit/fork immediately, since there's no larger "submit" to batch into there.
+**Editing or creating an object's content while authoring a resume is staged, not written.** Inside the resume form, adding a new object or editing an item's content only updates local form state (fields/body/tags) — no `OBJECT_REVISION` row exists yet. Only when the user clicks the resume's own Save does the app resolve every staged object change into a real insert (`createObject` / `editObjectRevision` / `forkObjectVariation`, as applicable), *then* insert the `RESUME`/`RESUME_REVISION`/`RESUME_SECTION`/`SECTION_OBJECT` rows referencing the now-real object revision ids. These are two sequential phases, not one transaction (see "Error Handling" below) — but neither runs until the user submits, so navigating away from an in-progress resume edit leaves no trace in the object tables. This staging behavior is specific to editing objects *through* the resume form; the standalone Object Dashboard (see Dashboards below) still writes each object edit/fork immediately, since there's no larger "submit" to batch into there.
 
 ```mermaid
 sequenceDiagram
@@ -140,7 +154,7 @@ sequenceDiagram
 
     opt Edit or Fork
         U->>App: Click Edit / Fork
-        App->>DB: SELECT current/source version + content
+        App->>DB: SELECT current/source revision + content
         App-->>U: Edit form, pre-filled
     end
 
@@ -150,18 +164,19 @@ sequenceDiagram
     end
 
     U->>App: Click Save
-    App->>DB: INSERT object_versions for every staged draft (create or edit, resolved to real ids)
-    App->>DB: INSERT resume_versions (rootVersionId, parentVersionId)
-    App->>DB: INSERT resume_version_sections + section_objects (referencing the resolved ids)
-    DB-->>App: new resume_version.id
-    App-->>U: Redirect to the new version's view page
+    App->>DB: INSERT object rows for every staged draft (resolved to real ids)
+    App->>DB: INSERT RESUME (Create/Fork only, with parentVersionId)
+    App->>DB: INSERT RESUME_REVISION
+    App->>DB: INSERT RESUME_SECTION + SECTION_OBJECT (referencing the resolved ids)
+    DB-->>App: new RESUME_REVISION.id
+    App-->>U: Redirect to the new revision's view page
 ```
 
-| Entry point | `rootVersionId` | `parentVersionId` | initial form content |
+| Entry point | Creates | `RESUME.parentVersionId` | initial form content |
 |---|---|---|---|
-| **Create** | self (new tree) | `null` | empty |
-| **Edit** | source version's `rootVersionId` (same tree) | source version's `parentVersionId` (unchanged) | pre-filled from the version being edited |
-| **Fork** | self (new tree) | source version's `id` | pre-filled from the source version |
+| **Create** | `RESUME` + `RESUME_REVISION` | `null` | empty |
+| **Edit** | `RESUME_REVISION` only | unchanged | pre-filled from the revision being edited |
+| **Fork** | `RESUME` + `RESUME_REVISION` | source resume's `id` | pre-filled from the source revision |
 
 **AI Career Q&A** (streaming, "career context" = every version of every one of the user's objects):
 
@@ -173,7 +188,7 @@ sequenceDiagram
     participant AI as OpenAI (Vercel AI SDK)
 
     U->>App: Ask question
-    App->>DB: SELECT all object_versions WHERE ownerUserId (+ Profile)
+    App->>DB: SELECT all object revisions (with variation/object) WHERE ownerUserId (+ Profile)
     App->>AI: streamText(context + question)
     AI-->>App: token stream
     App-->>U: streamed response
@@ -189,8 +204,8 @@ sequenceDiagram
     participant AI as OpenAI (Vercel AI SDK)
 
     U->>App: Paste job description
-    App->>DB: SELECT latest resume_version per tree (all resumes)
-    App->>DB: SELECT all object_versions WHERE ownerUserId
+    App->>DB: SELECT latest RESUME_REVISION per RESUME (all resumes)
+    App->>DB: SELECT all object revisions (with variation/object) WHERE ownerUserId
     App->>AI: generateObject(JD + resumes + objects, schema)
     AI-->>App: {jdRequirements, selectedResumeId, reasoning, recommendations}
     App-->>U: Show selected resume + recommendations
@@ -198,8 +213,8 @@ sequenceDiagram
 
 **Dashboards** (plain reads, no AI, no sequence diagram needed):
 
-- **Resume Dashboard:** groups `resume_versions` by `rootVersionId` to list distinct resumes; draws fork arrows by following `parentVersionId` links that cross into a different `rootVersionId`.
-- **Object Dashboard:** groups `object_versions` by `originVersionId` — one card per object. Within it, one sub-card per `rootVersionId` (variation), showing only that variation's latest version, each with **Edit** (new historic version, same `rootVersionId`) and **New Variation** (fork, new `rootVersionId`, same `originVersionId`) actions. Clicking a variation sub-card opens a detail popup with that variation's full history (every version under its `rootVersionId`, oldest-to-newest) and the list of resumes using it — joining `section_object → resume_version_section → resume_version` across every version sharing that `rootVersionId`, not just the latest. (Tag filtering is client-side on the object list page, not a query concern here.)
+- **Resume Dashboard:** lists `RESUME` rows directly (each already one distinct resume); draws fork arrows by following `parentVersionId` links between `RESUME` rows.
+- **Object Dashboard:** groups `OBJECT_VARIATION` by `objectId` — one card per object. Within it, one sub-card per `OBJECT_VARIATION`, showing only that variation's latest revision, each with **Edit** (new `OBJECT_REVISION`, same variation) and **New Variation** (new `OBJECT_VARIATION`, same `objectId`) actions. Clicking a variation sub-card opens a detail popup with that variation's full history (every `OBJECT_REVISION` under its `objectVariationId`, oldest-to-newest) and the list of resumes using it — joining `SECTION_OBJECT → RESUME_SECTION → RESUME_REVISION → RESUME` across every revision under that variation, not just the latest. (Tag filtering is client-side on the object list page, not a query concern here.)
 
 ## AI Feature Details
 
@@ -220,8 +235,8 @@ sequenceDiagram
 - **Empty states:** Career Q&A and JD optimization both need a friendly message when the user has zero objects/resumes yet, instead of calling the AI with empty context.
 - **Concurrent saves:** every save is an immutable insert, never an update, so two edits started from the same version simply produce two diverging versions — there's no conflict to detect or lock against; this falls out of the data model.
 - **Field validation:** each object `type`'s Zod schema validates `fields` on write, rejecting malformed data before persistence.
-- **Resume submit is two sequential phases, not one transaction:** resolving staged object drafts (`object_versions` inserts) happens first, then the `resume_versions`/`sections`/`items` insert (itself already atomic as one nested Prisma write). No `$transaction` wraps the two phases together. If an object draft fails validation, submission stops there and the resume is never written — surfaced as an error on that specific item, not a whole-form error. If a later phase fails after some object drafts already resolved, those object versions remain as real, valid, unused rows — not a broken state, since an `object_version` existing without any resume referencing it is already normal (identical to one created directly via the Object Dashboard). Full atomicity was considered and rejected: the data model has no invariant that requires it, and it would require threading a shared Prisma transaction handle across `objects/versioning.ts` and `resumes/versioning.ts`.
+- **Resume submit is two sequential phases, not one transaction:** resolving staged object drafts (`OBJECT`/`OBJECT_VARIATION`/`OBJECT_REVISION` inserts) happens first, then the `RESUME`/`RESUME_REVISION`/`RESUME_SECTION`/`SECTION_OBJECT` insert (itself already atomic as one nested Prisma write). No `$transaction` wraps the two phases together. If an object draft fails validation, submission stops there and the resume is never written — surfaced as an error on that specific item, not a whole-form error. If a later phase fails after some object drafts already resolved, those object rows remain as real, valid, unused rows — not a broken state, since an `OBJECT_REVISION` existing without any resume referencing it is already normal (identical to one created directly via the Object Dashboard). The data model has no invariant that requires full atomicity across the two phases, so no shared Prisma transaction handle is threaded across `objects/versioning.ts` and `resumes/versioning.ts`.
 
 ## Testing Approach
 
-Implementation follows TDD. Priority coverage: versioning correctness (`rootVersionId`/`parentVersionId` set correctly on edit vs. fork for resumes; `rootVersionId`/`originVersionId` set correctly on edit vs. new-variation fork for objects), an ownership-check test per mutation (user A cannot read/write user B's rows), and a schema-validation test for the AI structured output. AI response *quality* is checked manually, since LLM output isn't deterministic.
+Implementation follows TDD. Priority coverage: versioning correctness (`RESUME_REVISION` linked to the correct `RESUME`, and `RESUME.parentVersionId` set correctly on edit vs. fork; `OBJECT_REVISION` linked to the correct `OBJECT_VARIATION` on edit vs. new-variation fork), an ownership-check test per mutation (user A cannot read/write user B's rows), and a schema-validation test for the AI structured output. AI response *quality* is checked manually, since LLM output isn't deterministic.

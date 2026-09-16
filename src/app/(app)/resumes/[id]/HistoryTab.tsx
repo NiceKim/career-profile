@@ -4,14 +4,19 @@ import { cn } from '@/lib/utils';
 
 export async function HistoryTab({
   userId,
-  rootVersionId,
+  resumeId,
+  resumeName,
   currentId,
 }: {
   userId: string;
-  rootVersionId: string;
+  resumeId: string;
+  // Name is on the Resume identity row now, shared by every revision — the caller
+  // already has it (from getResumeVersionWithContent), so it's passed down instead
+  // of this component running its own extra query for it.
+  resumeName: string;
   currentId: string;
 }) {
-  const history = await getResumeTreeHistory(userId, rootVersionId);
+  const history = await getResumeTreeHistory(userId, resumeId);
 
   return (
     <ul className="flex flex-col gap-1">
@@ -24,7 +29,7 @@ export async function HistoryTab({
               v.id === currentId ? 'font-medium text-foreground' : 'text-muted-foreground'
             )}
           >
-            Version {i + 1} {v.id === currentId && '(current)'} — {v.name}
+            Version {i + 1} {v.id === currentId && '(current)'} — {resumeName}
           </Link>
         </li>
       ))}
